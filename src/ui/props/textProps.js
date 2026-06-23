@@ -73,7 +73,30 @@ export function textPropsHtml(layer) {
 export function wireTextProps(layer) {
   byId('tText').addEventListener('input', (e) => { layer.text = e.target.value; scheduleRender(); });
   byId('tText').addEventListener('change', pushHistory);
-  wireCustomSelect('tFont', (v) => { layer.font = v; scheduleRender(); pushHistory(); });
+  wireCustomSelect('tFont', (v) => {
+    if (v === '__custom__') {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.ttf,.otf,.woff,.woff2';
+      input.addEventListener('change', async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const familyName = 'CustomFont_' + Date.now();
+        const url = URL.createObjectURL(file);
+        const face = new FontFace(familyName, `url(${url})`);
+        await face.load();
+        document.fonts.add(face);
+        layer.font = familyName;
+        // Update dropdown label to show the file name without extension.
+        const label = file.name.replace(/\.[^.]+$/, '');
+        const sel = byId('tFont');
+        if (sel) { sel.dataset.value = familyName; sel.querySelector('.csel-label').textContent = label; }
+        scheduleRender(); pushHistory();
+      });
+      input.click();
+      return;
+    }
+    layer.font = v; scheduleRender(); pushHistory();
+  });
   byId('tSize').addEventListener('input', (e) => { layer.sizeScale = +e.target.value / 100; byId('tSizeval').textContent = e.target.value + '%'; scheduleRender(); });
   byId('tSize').addEventListener('change', pushHistory);
   byId('tSizeval').textContent = Math.round((layer.sizeScale ?? 0.6) * 100) + '%';

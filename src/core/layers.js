@@ -7,6 +7,7 @@ export const FONT_OPTIONS = [
   { value: 'Georgia, "Times New Roman", serif', label: 'Georgia' },
   { value: '"Comic Sans MS", cursive', label: 'Comic Sans' },
   { value: '"Courier New", monospace', label: 'Courier' },
+  { value: '__custom__', label: 'Custom font…' },
 ];
 
 export function defaultTextLayer() {
