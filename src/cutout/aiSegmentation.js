@@ -54,8 +54,8 @@ export async function loadModel(onProgress) {
 }
 
 function prepareSrcCanvas(imageEl) {
-  let w = imageEl.naturalWidth;
-  let h = imageEl.naturalHeight;
+  let w = imageEl.naturalWidth || imageEl.width;
+  let h = imageEl.naturalHeight || imageEl.height;
 
   if (Math.max(w, h) > SIZE_CAP) {
     const scale = SIZE_CAP / Math.max(w, h);

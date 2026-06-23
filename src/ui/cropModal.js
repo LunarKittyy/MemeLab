@@ -165,7 +165,7 @@ export function openCropModal(layer) {
   let cw = MAX_W, ch = Math.round(cw / aspect);
   if (ch > MAX_H) { ch = MAX_H; cw = Math.round(ch * aspect); }
   _canvas.width = cw; _canvas.height = ch;
-  _canvas.style.width = cw + 'px'; _canvas.style.height = ch + 'px';
+  _canvas.style.width = ''; _canvas.style.height = '';
   _imgX = 0; _imgY = 0; _imgW = cw; _imgH = ch;
   const cur = layer.crop || { x: 0, y: 0, w: 1, h: 1 };
   _crop = normToDisp(cur);

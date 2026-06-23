@@ -101,11 +101,25 @@ async function runBgRemoval(layer) {
     return;
   }
 
+  // If the layer has a crop, bake it into a canvas so the AI only sees the cropped region.
+  let aiInput = img;
+  const crop = layer.crop;
+  if (crop && (crop.x !== 0 || crop.y !== 0 || crop.w !== 1 || crop.h !== 1)) {
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const sx = crop.x * nw, sy = crop.y * nh;
+    const sw = crop.w * nw, sh = crop.h * nh;
+    const baked = document.createElement('canvas');
+    baked.width = Math.round(sw);
+    baked.height = Math.round(sh);
+    baked.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, baked.width, baked.height);
+    aiInput = baked;
+  }
+
   setProgress('Starting AI cutout...', 0.05);
   await new Promise(resolve => setTimeout(resolve, 100));
 
   try {
-    const maskCanvas = await removeBg(img, (phase, pct) => {
+    const maskCanvas = await removeBg(aiInput, (phase, pct) => {
       if (phase === 'download') {
         setProgress(`Downloading model… ${Math.round(pct * 100)}%`, pct * 0.7);
       } else if (phase === 'init') {

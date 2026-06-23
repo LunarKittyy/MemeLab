@@ -879,6 +879,6 @@ select option {
 .crop-modal{background:#1a1525;border:1px solid rgba(255,255,255,0.1);border-radius:12px;
   padding:16px;display:flex;flex-direction:column;gap:12px;max-width:95vw;}
 .crop-header{font-size:13px;font-weight:600;color:var(--text);}
-.crop-canvas{display:block;border-radius:6px;cursor:crosshair;}
+.crop-canvas{display:block;border-radius:6px;cursor:crosshair;max-width:100%;height:auto;}
 .crop-footer{display:flex;align-items:center;gap:8px;}
 .crop-apply-btn{background:var(--accent)!important;color:#fff!important;}
