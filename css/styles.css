@@ -345,15 +345,19 @@ input[type="color"]::-moz-color-swatch{border:none;border-radius:0;}
 .empty-hint{padding:24px 16px;text-align:center;color:var(--text-faint);font-size:12.5px;line-height:1.5;}
 
 .layerrow{
-  display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:2px;
-  border-radius:var(--radius-sm);border:none;background:transparent;
+  display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:6px;
+  border-radius:var(--radius-sm);
+  border:1px solid rgba(255, 255, 255, 0.03);
+  background:rgba(255, 255, 255, 0.02);
   transition:all 0.15s ease;
 }
 .layerrow:hover{
-  background:rgba(255, 255, 255, 0.04);
+  background:rgba(255, 255, 255, 0.06);
+  border-color:rgba(255, 255, 255, 0.08);
 }
 .layerrow.selected{
-  background:rgba(255, 255, 255, 0.08);
+  background:rgba(255, 255, 255, 0.1);
+  border-color:rgba(255, 255, 255, 0.15);
   color:var(--text);
   box-shadow:inset 2px 0 0 0 var(--accent);
 }
