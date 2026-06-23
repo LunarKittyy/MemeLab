@@ -7,6 +7,7 @@ import { scheduleRender, resizeStageBuffer, exportPng as renderExportPng } from 
 import { fontsReady } from '../render/fonts.js';
 import { selectLayer } from '../interactions/pointer.js';
 import { setIcon } from './icons.js';
+import { wireCustomSelect } from './customSelect.js';
 import { renderLayerList, deleteLayer, duplicateLayer, moveLayerUp, moveLayerDown, moveLayerToTop, moveLayerToBottom, setLastCreatedLayerId } from './layerList.js';
 import { renderPropsPanel } from './props/panel.js';
 import { byId, syncTransformInputs } from './props/shared.js';
@@ -116,7 +117,7 @@ function showHint(msg) {
 
 async function exportPngAndDownload() {
   await fontsReady();
-  const scale = +document.getElementById('exportScale').value || 1;
+  const scale = +(document.getElementById('exportScale').dataset.value) || 1;
   const blob = await renderExportPng(scale);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -144,9 +145,18 @@ export function syncSizeInputs() {
   byId('customH').value = state.height;
   const preset = byId('sizePreset');
   const match = `${state.width}x${state.height}`;
-  let found = false;
-  for (const opt of preset.options) { if (opt.value === match) { preset.value = match; found = true; break; } }
-  if (!found) { preset.value = 'custom'; document.getElementById('customSizeRow').style.display = 'grid'; }
+  const matchOpt = preset.querySelector(`.csel-opt[data-value="${match}"]`);
+  if (matchOpt) {
+    preset.dataset.value = match;
+    preset.querySelector('.csel-label').textContent = matchOpt.textContent;
+    preset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o === matchOpt));
+    byId('customSizeRow').style.display = 'none';
+  } else {
+    preset.dataset.value = 'custom';
+    preset.querySelector('.csel-label').textContent = 'Custom…';
+    preset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o.dataset.value === 'custom'));
+    byId('customSizeRow').style.display = 'grid';
+  }
 }
 
 
@@ -186,7 +196,8 @@ export function wireGlobalUI() {
   });
 
 
-  document.getElementById('sizePreset').addEventListener('change', (e) => applySizePreset(e.target.value));
+  wireCustomSelect('sizePreset', (v) => applySizePreset(v));
+  wireCustomSelect('exportScale', () => {});
   document.getElementById('customW').addEventListener('change', (e) => { state.width = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
   document.getElementById('customH').addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
 
