@@ -844,7 +844,7 @@ select option {
 .csel.csel-open .csel-chevron{transform:rotate(180deg);}
 .csel-popup{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);
   background:#1e1828;border:1px solid rgba(255,255,255,0.12);border-radius:8px;
-  overflow-y:auto;max-height:220px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.5);}
+  overflow-y:auto;max-height:320px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.5);}
 .csel.csel-open .csel-popup{display:block;}
 .csel-opt{padding:8px 12px;font-size:12px;cursor:pointer;color:var(--text);transition:background 0.1s;}
 .csel-opt:hover{background:rgba(255,255,255,0.08);}
