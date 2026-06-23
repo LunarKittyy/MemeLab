@@ -56,55 +56,50 @@ common case).
 
 ---
 
-## 2. Blur / pixelate background box
+## 2. Blur / pixelate censor shape
 
-**Goal:** the text layer's background box (currently solid-color only) gets
-two more fill modes: blur and pixelate the pixels already drawn underneath
-it, like a censor bar.
+**Goal:** the rect/shape layer gets two additional fill modes alongside the
+existing solid-color fill: blur and pixelate the pixels already composited
+underneath it, turning the shape into a censor bar.
 
-**Design:** the schema is already reserved in `core/layers.js`:
-`box: { enabled, mode: 'color' | 'blur' | 'pixelate', color, amount }`.
-`amount` is blur radius in px for `'blur'`, block size in px for
-`'pixelate'`.
+**Design:** add `mode: 'color' | 'blur' | 'pixelate'` and `amount` fields to
+`defaultRectLayer` in `core/layers.js` (both reserved there now).
+`amount` is blur radius in px for `'blur'`, block size in px for `'pixelate'`.
+Default `mode: 'color'` is identical to old behaviour, so existing saves
+are unaffected.
 
-The hard part: by the time a text layer draws, the canvas already has
+The hard part: by the time a rect layer draws, the canvas already has
 everything below it composited (layers draw bottom-to-top onto the same
 ctx). That means you genuinely can read back "what's there" via
-`getImageData` on the *main* canvas, no separate compositing step needed.
+`getImageData` on the *current* canvas — no separate compositing step needed.
 There is no cross-origin taint risk anywhere in this app (every image
 source is a `FileReader` data URL, never a fetched/cross-origin image), so
 `getImageData`/`toDataURL` will never throw for that reason.
 
-Suggested flow, probably as a new `render/boxEffects.js`:
-1. Compute the box's rect in **device pixel** coordinates (the ctx is
-   already translated/rotated into layer-local space when `drawTextLayer`
-   runs — you need the inverse of that to know what to read back in device
-   space, or restructure so this read happens before the per-layer
-   transform is applied).
-2. `getImageData` that rect from the main canvas (or read from an explicit
-   axis-aligned bounding box if the layer is rotated, see scope note below).
+Suggested flow in `render/boxEffects.js`:
+1. Compute the rect's device-pixel coordinates from `layer.x/y/w/h` and
+   the current transform scale (`ctx.getTransform()`).
+2. `getImageData` that rect from `ctx.canvas`.
 3. Blur: draw the captured pixels onto a small offscreen canvas, then draw
-   *that* canvas back with `ctx.filter = 'blur(Npx)'` on the draw call,
-   rather than hand-rolling a box blur.
+   *that* canvas back with `ctx.filter = 'blur(Npx)'` on the draw call.
 4. Pixelate: draw the captured region onto a tiny canvas scaled down by
    roughly `amount`, then draw that tiny canvas back up to full size with
    `ctx.imageSmoothingEnabled = false` so it stays blocky.
-5. Draw the result into the box's rect, then proceed with the text draw as
-   today.
+5. Clip to the rect's corner radius and draw the result, then proceed with
+   the stroke draw as today.
 
-**Scope note:** handling this correctly when the text layer is *rotated* is
+**Scope note:** handling this correctly when the rect layer is *rotated* is
 real extra work (the sampled region needs to be un-rotated before
 processing and re-rotated on the way back). Recommend shipping the
-unrotated case first since rotated censor boxes are a rare case for a meme
-tool, and treating rotation support as a clearly separate follow-up rather
-than blocking the feature on it.
+unrotated case first and treating rotation support as a clearly separate
+follow-up rather than blocking the feature on it.
 
 **Touch points:**
 - `render/boxEffects.js` (new) — the blur/pixelate sampling+redraw logic.
-- `render/text.js` — `drawTextLayer`, branch on `box.mode`.
-- `ui/props/textProps.js` — mode selector (reuse the `seg` segmented-button
+- `render/shapes.js` — `drawRectLayer`, branch on `layer.mode`.
+- `ui/props/rectProps.js` — mode selector (reuse the `seg` segmented-button
   pattern already used for align/vAlign) + an amount slider shown only when
-  mode isn't `'color'`.
+  mode isn't `'color'`; hide the fill-color picker in blur/pixelate modes.
 
 **Acceptance:**
 - `mode: 'color'` renders pixel-identical to before this feature.
@@ -321,7 +316,9 @@ pipeline before the model even runs if you skip this.
 
 ---
 
-## General notes for all five
+---
+
+## General notes for all features
 
 - Extend `tests/test_full.py` per feature rather than writing throwaway
   one-off test scripts, keep it as one growing regression suite.
@@ -332,3 +329,186 @@ pipeline before the model even runs if you skip this.
 - Nothing in this app ever calls a server. If a feature seems to want one
   (it shouldn't, given the plan above), that's a sign to stop and rethink,
   not a sign to add a backend.
+
+---
+
+## 6. History context menu + better undo/redo icons
+
+**Goal:** right-clicking either the Undo or Redo button opens a compact
+dropdown listing recent history entries so the user can jump back or
+forward multiple steps in one click. Also: replace the current placeholder
+button icons with proper SVG arrow icons that match the rest of the icon
+set.
+
+### 6a. Better icons
+
+The undo/redo `<button>` elements (`#btnUndo`, `#btnRedo`) currently use
+`class="iconbtn"` but have no visible icon set. Add proper SVG undo/redo
+curved-arrow icons to `ui/icons.js` (`ICONS.undo`, `ICONS.redo`) and call
+`setIcon('btnUndo', ICONS.undo)` / `setIcon('btnRedo', ICONS.redo)` in
+`toolbar.js` init, exactly as the other toolbar icons are wired.
+
+### 6b. History context menu
+
+**Design:** `core/history.js` already stores up to 80 snapshots but
+currently exposes no way to read their labels or jump to an arbitrary
+index. Extend it minimally:
+
+```
+// New exports from core/history.js
+getHistoryEntries()  -> [{ index, label, isCurrent }]
+jumpToHistory(index) -> void   // like undo/redo but arbitrary jump
+```
+
+`label` is a human-readable string describing the action. The simplest
+approach: store a label alongside each snapshot when `pushHistory()` is
+called. Add an optional `label` parameter to `pushHistory(label)` with a
+sensible fallback (`'Edit'`). Callers that already pass context (e.g.
+`pushHistory()` after adding a layer) can start providing a label; the
+rest can default. Don't block the feature on retrofitting every call site
+— add labels incrementally.
+
+**Trigger:** `contextmenu` event on `#btnUndo` and `#btnRedo`
+(preventDefault to suppress the browser's native menu). The undo button's
+menu lists entries from current back to oldest (scroll if > ~8 visible);
+the redo button's menu lists entries from current forward to newest.
+Clicking any entry calls `jumpToHistory(index)` then fires the same
+`restoreListeners` that `undo()`/`redo()` already call.
+
+**UI:** a small absolutely-positioned `<ul>` panel that appears below the
+button, dismisses on outside-click or Escape, and is keyboard-navigable
+(arrow keys + Enter). Reuse the existing CSS custom-property colour tokens
+rather than inventing new ones so it fits the dark-mode theme automatically.
+The list items should highlight the "current" entry distinctly (e.g. a
+left-border accent) and dim entries that are in the undo/redo direction
+away from current.
+
+**Touch points:**
+- `core/history.js` — add `label` to snapshots, `getHistoryEntries()`,
+  `jumpToHistory(index)`.
+- `ui/toolbar.js` — wire `contextmenu` listeners on `#btnUndo`/`#btnRedo`,
+  render and manage the dropdown DOM.
+- `ui/icons.js` — add `ICONS.undo` and `ICONS.redo` SVG strings.
+- `css/styles.css` — style the history dropdown (position, scroll, hover,
+  current-entry highlight).
+
+**Acceptance:**
+- Right-clicking Undo shows a list of past states; clicking one jumps
+  directly to it, firing a single `restoreListeners` call (same result as
+  pressing Undo N times but without the intermediate renders).
+- Right-clicking Redo shows future states (only enabled when redo is
+  available, same as the button itself).
+- Keyboard: arrow keys move focus through the list, Enter selects, Escape
+  dismisses without jumping.
+- The dropdown does not appear when the corresponding button is `disabled`.
+- Existing Undo/Redo click behaviour is unchanged.
+
+---
+
+## 7. Drag-to-reorder layers
+
+**Goal:** layers in the layer list can be reordered by dragging their row
+up or down, replacing the existing up/down arrow micro-buttons (which can
+be removed once drag is working).
+
+**Design:** use pointer events rather than the HTML5 Drag and Drop API, so
+the same code path works on both desktop and touch. The layer list is
+inside a scrollable panel, so touch needs a **long-press** to distinguish
+reorder intent from normal scroll:
+
+- On `pointerdown` on a layer row, start a 300 ms timer.
+- If the pointer moves more than ~6 px before the timer fires → cancel the
+  timer; the gesture is a scroll, do nothing.
+- When the timer fires → enter drag mode: call `setPointerCapture` on the
+  list element, add a visual "dragging" class to the row, show an
+  insertion-line indicator that follows the pointer through the list.
+- On `pointermove` in drag mode → update the insertion-line indicator to
+  whichever gap the pointer is currently over.
+- On `pointerup` in drag mode → commit the reorder (splice `state.layers`,
+  `pushHistory()`, re-render), exit drag mode.
+- On `pointercancel` or Escape → cancel drag without modifying state.
+
+On desktop (mouse), the 300 ms delay is skipped: a `mousedown` + immediate
+movement begins the drag instantly (same as every desktop drag-sort UX).
+Detect this by checking `evt.pointerType !== 'touch'` and skipping the
+timer.
+
+The "background" pseudo-row at the bottom is never draggable and never a
+valid drop target (it's not a real layer).
+
+Once mobile drag is confirmed working, remove the `reorder-up` /
+`reorder-down` arrow buttons and the `reorderLayer()` helper entirely. Do
+not remove them until mobile is verified — they are the fallback.
+
+**Touch points:**
+- `ui/layerList.js` — add drag-and-drop event wiring, remove arrow buttons
+  (or keep as accessible fallback).
+- `css/styles.css` — insertion-line indicator style, drag-ghost opacity.
+
+**Acceptance:**
+- Dragging a layer row to a new position reorders it correctly in both the
+  list and the rendered canvas.
+- Dropping onto the background row is a no-op.
+- A single undo reverts the reorder.
+- Works with keyboard-initiated drag (`Space` to pick up, arrow keys to
+  move, `Enter`/`Space` to drop) for accessibility.
+
+---
+
+## 8. Merge layer down
+
+**Goal:** a "Merge down" action on any layer that flattens it onto the
+layer immediately below it into a single image layer, without affecting
+anything else.
+
+**Design:** merge-down is a one-shot operation on two adjacent layers —
+the selected layer (on top) and the one directly below it in `state.layers`
+(index - 1). The result is always a new image layer whose pixel data is the
+composite of both, at the full canvas resolution. This makes merge
+lossless in the sense that the combined pixels are preserved; individual
+layer editability is intentionally lost, which is the point.
+
+Suggested implementation in a new `core/merge.js`:
+```
+mergeLayerDown(topLayer, bottomLayer) -> newImageLayer
+```
+
+Steps:
+1. Create an offscreen canvas at the logical canvas size (`state.width ×
+   state.height`). Draw `bottomLayer` then `topLayer` onto it using the
+   same `drawLayer` path that `renderScene` uses (import and call it
+   directly, or factor a `drawLayerToCtx(ctx, layer)` helper from
+   `renderer.js`).
+2. Call `ctx.toDataURL('image/png')` to get the merged src. The `naturalW`
+   and `naturalH` of the new layer are `state.width` × `state.height`
+   (the offscreen canvas dimensions).
+3. Build a new image layer via `defaultImageLayer(src, naturalW, naturalH)`
+   but then override `x/y/w/h` to cover the full canvas (0, 0, state.width,
+   state.height) and set `opacity: 1`, `rotation: 0` so the merged result
+   sits flush. Name it `'${bottomLayer.name} + ${topLayer.name}'`.
+4. In `state.layers`, remove both original layers and insert the new one at
+   the bottom layer's index. Select the new layer, `pushHistory()` once.
+
+**UI:** a "Merge down" button in the shared `actionsHtml()` in
+`ui/props/shared.js`, disabled when the selected layer has nothing below
+it (i.e. it's index 0 in `state.layers`, already the lowest non-background
+layer). Alternatively, surface it as an icon button in the layer row itself
+alongside the existing dup/delete buttons.
+
+**Touch points:**
+- `core/merge.js` (new) — `mergeLayerDown()` logic.
+- `ui/props/shared.js` — add "Merge down" to `actionsHtml()` and wire in
+  `wireActions()`, conditionally disabled.
+- `ui/layerList.js` or props panel — trigger site.
+
+**Acceptance:**
+- Immediately after merge, the rendered canvas looks identical to before
+  (the merged pixels exactly reproduce the combined visual of the two
+  original layers).
+- The merged layer is a single normal image layer — fully moveable,
+  scaleable, etc.
+- "Merge down" is disabled / absent when the selected layer is already the
+  bottom-most layer.
+- A single undo restores both original layers exactly.
+- Merging a text layer down preserves its rendered appearance (font, stroke,
+  box) because it goes through the full `drawLayer` path, not a shortcut.

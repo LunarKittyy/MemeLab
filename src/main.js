@@ -4,7 +4,7 @@ import { pushHistory, onHistoryCommit, onRestore, canUndo, canRedo } from './cor
 import { stageEventsInit, onSelectionChange } from './interactions/pointer.js';
 import { renderLayerList } from './ui/layerList.js';
 import { renderPropsPanel } from './ui/props/panel.js';
-import { initIcons, wireGlobalUI, syncSizeInputs, syncBgControls, updateHistoryButtons, updateSaveStatusUI } from './ui/toolbar.js';
+import { initIcons, wireGlobalUI, syncSizeInputs, updateHistoryButtons, updateSaveStatusUI } from './ui/toolbar.js';
 import { scheduleAutosave, tryLoadAutosave, onSaveStatusChange } from './persistence/autosave.js';
 
 // --- cross-module wiring ---
@@ -43,7 +43,6 @@ async function init() {
   stageEventsInit();
   await tryLoadAutosave();
   syncSizeInputs();
-  syncBgControls();
   renderLayerList();
   renderPropsPanel();
   resizeStageBuffer();

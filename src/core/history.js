@@ -21,12 +21,31 @@ export function onHistoryCommit(fn) {
   commitListeners.push(fn);
 }
 
-export function pushHistory() {
+export function pushHistory(label) {
   history = history.slice(0, historyIndex + 1);
-  history.push(snapshot());
+  const snap = snapshot();
+  snap._label = label || 'Edit';
+  history.push(snap);
   historyIndex++;
   if (history.length > 80) { history.shift(); historyIndex--; }
   commitListeners.forEach((fn) => fn());
+}
+
+// Returns the full history stack as display entries for the context menu.
+export function getHistoryEntries() {
+  return history.map((snap, i) => ({
+    index: i,
+    label: snap._label || 'Edit',
+    isCurrent: i === historyIndex,
+  }));
+}
+
+// Jump directly to any history index without calling pushHistory.
+export function jumpToHistory(index) {
+  if (index < 0 || index >= history.length) return;
+  historyIndex = index;
+  restoreSnapshot(history[historyIndex]);
+  restoreListeners.forEach((fn) => fn());
 }
 
 export function restoreSnapshot(snap) {

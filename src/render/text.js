@@ -1,6 +1,3 @@
-// Word-wrapping and drawing for text layers. Kept separate from shapes.js
-// since this is the one most likely to grow (blur/pixelate box fill lands
-// here next).
 
 export function buildFontString(layer) {
   const style = layer.italic ? 'italic ' : '';
@@ -49,8 +46,6 @@ export function drawRoundedRect(ctx, x, y, w, h, r) {
 export function drawTextLayer(ctx, layer) {
   ctx.font = buildFontString(layer);
   if (layer.box && layer.box.enabled) {
-    // Only the solid-color fill mode exists today; blur/pixelate are a
-    // separate, later feature that will branch on layer.box.mode here.
     drawRoundedRect(ctx, 0, 0, layer.w, layer.h, 0);
     ctx.fillStyle = layer.box.color;
     ctx.fill();

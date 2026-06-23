@@ -15,8 +15,8 @@
   <button class="iconbtn" id="btnUndo" title="Undo (Ctrl+Z)" disabled></button>
   <button class="iconbtn" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled></button>
   <div class="divider"></div>
-  <button class="panelbtn" id="btnOpenLeft">Layers</button>
-  <button class="panelbtn" id="btnOpenRight">Style</button>
+  <button class="iconbtn" id="btnOpenLeft" title="Layers"></button>
+  <button class="iconbtn" id="btnOpenRight" title="Style"></button>
   <div class="divider"></div>
   <select class="exportscale" id="exportScale" title="Export resolution">
     <option value="1">1x export</option>
@@ -56,36 +56,13 @@
         </div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Background</div>
-        <div class="seg" id="bgTypeSeg">
-          <button data-v="color" class="active">Color</button>
-          <button data-v="image">Image</button>
-        </div>
-        <div class="row" id="bgColorRow" style="margin-top:8px;">
-          <label>Color</label>
-          <input type="color" id="bgColor" value="#ffffff">
-        </div>
-        <div id="bgImageRow" style="display:none;margin-top:8px;">
-          <button class="smallbtn full" id="btnBgImage">Upload background image</button>
-          <div class="row" style="margin-top:8px;">
-            <label>Fit</label>
-            <select class="fullselect grow" id="bgFit">
-              <option value="cover">Cover</option>
-              <option value="contain">Contain</option>
-              <option value="stretch">Stretch</option>
-            </select>
-          </div>
-          <button class="smallbtn full" id="btnBgRemove" style="margin-top:8px;">Remove image</button>
-        </div>
-      </div>
 
       <div class="section">
         <button class="smallbtn full" id="btnReset">Reset canvas</button>
       </div>
 
-      <div class="section" style="border-top:1px solid var(--border);">
-        <div class="section-title">Layers (top first)</div>
+      <div class="section">
+        <div class="section-title">Layers</div>
       </div>
       <ul class="layerlist" id="layerList"></ul>
     </div>
@@ -107,6 +84,50 @@
     </div>
   </aside>
 
+</div>
+
+<div class="help-modal" id="helpModal">
+  <div class="help-content">
+    <button class="help-close" id="helpClose">&times;</button>
+    <h3>Keyboard Shortcuts</h3>
+    <div class="help-grid">
+      <div class="help-section">
+        <h4>Tools & Actions</h4>
+        <ul>
+          <li><span class="keys"><kbd>T</kbd></span> <span>Add Text Layer</span></li>
+          <li><span class="keys"><kbd>I</kbd></span> <span>Add Image Layer</span></li>
+          <li><span class="keys"><kbd>M</kbd></span> <span>Add Shape Layer</span></li>
+          <li><span class="keys"><kbd>Del</kbd> / <kbd>Backspace</kbd></span> <span>Delete Selected Layer</span></li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h4>Edit & Arrange</h4>
+        <ul>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>Z</kbd></span> <span>Undo</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></span> <span>Redo</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>J</kbd></span> <span>Duplicate Selected Layer</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>D</kbd></span> <span>Deselect All Layers</span></li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h4>Layer Depth</h4>
+        <ul>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>]</kbd></span> <span>Bring Layer Forward</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>[</kbd></span> <span>Send Layer Backward</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd></span> <span>Bring Layer to Front</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd></span> <span>Send Layer to Back</span></li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h4>Nudge Position</h4>
+        <ul>
+          <li><span class="keys"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd></span> <span>Nudge 1px</span></li>
+          <li><span class="keys"><kbd>Shift</kbd> + <kbd>Arrows</kbd></span> <span>Nudge 10px</span></li>
+          <li><span class="keys"><kbd>Ctrl</kbd> + <kbd>/</kbd></span> <span>Toggle Shortcuts Help</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="backdrop" id="backdrop"></div>

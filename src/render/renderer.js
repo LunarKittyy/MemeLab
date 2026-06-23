@@ -1,4 +1,4 @@
-import { state, getSelected, ensureImage } from '../core/state.js';
+import { state, getSelected, ensureImage, getLayerById } from '../core/state.js';
 import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
@@ -83,6 +83,12 @@ export function renderScene(ctx, opts) {
   if (!opts.forExport) drawSelectionOverlay(ctx);
 }
 
+// Draw an explicit list of layers (no background, no selection overlay).
+// Used by mergeLayerDown to composite exactly two layers onto an offscreen canvas.
+export function renderLayersToCtx(ctx, layers) {
+  for (const layer of layers) drawLayer(ctx, layer);
+}
+
 let renderScheduled = false;
 export function scheduleRender() {
   if (renderScheduled) return;
@@ -93,6 +99,78 @@ export function scheduleRender() {
 function doRender() {
   stageCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   renderScene(stageCtx, { forExport: false });
+  updateThumbnails();
+}
+
+export function updateThumbnails() {
+  const canvases = document.querySelectorAll('.thumb-canvas');
+  canvases.forEach((canvas) => {
+    const id = canvas.dataset.id;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw dark checkerboard pattern
+    ctx.save();
+    ctx.fillStyle = '#16131c';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#24202d';
+    const size = 6;
+    for (let y = 0; y < h; y += size) {
+      for (let x = 0; x < w; x += size) {
+        if ((Math.floor(x / size) + Math.floor(y / size)) % 2 === 0) {
+          ctx.fillRect(x, y, size, size);
+        }
+      }
+    }
+    ctx.restore();
+
+    if (id === 'background') {
+      const bg = state.background;
+      if (bg.type === 'image' && bg.src) {
+        const img = ensureImage(bg.src);
+        if (img && img.complete && img.naturalWidth) {
+          ctx.save();
+          drawCover(ctx, img, 0, 0, w, h, bg.fit);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+        }
+      } else {
+        ctx.fillStyle = bg.color;
+        ctx.fillRect(0, 0, w, h);
+      }
+      return;
+    }
+
+    const layer = getLayerById(id);
+    if (!layer) return;
+
+    if (layer.w > 0 && layer.h > 0) {
+      ctx.save();
+      // Center of thumbnail
+      ctx.translate(w / 2, h / 2);
+      // Scale to fit the layer's bounding box
+      const scale = Math.min(w / layer.w, h / layer.h);
+      ctx.scale(scale, scale);
+      // Apply rotation, opacity, etc.
+      ctx.rotate(deg2rad(layer.rotation));
+      ctx.globalAlpha = clamp(layer.opacity, 0, 1);
+      // Translate back so the layer's top-left draws relative to 0, 0
+      ctx.translate(-layer.w / 2, -layer.h / 2);
+
+      if (layer.type === 'image') {
+        drawImageLayer(ctx, layer);
+      } else if (layer.type === 'rect') {
+        drawRectLayer(ctx, layer);
+      } else if (layer.type === 'text') {
+        drawTextLayer(ctx, layer);
+      }
+      ctx.restore();
+    }
+  });
 }
 
 export function resizeStageBuffer() {

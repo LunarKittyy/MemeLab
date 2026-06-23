@@ -210,6 +210,117 @@ def run():
         check("no duplicate ids after adding post-restore", len(ids) == len(set(ids)))
 
         page.screenshot(path=os.path.join(OUT_DIR, "qa_desktop.png"))
+
+        # ---- feature #2: blur / pixelate censor shape ----
+        # A fresh context with a known image underneath a rect layer.
+        ctx_box = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_box = ctx_box.new_page()
+        errors_box = []
+        page_box.on("pageerror", lambda exc: errors_box.append(str(exc)))
+        page_box.goto(TEST_URL)
+        page_box.wait_for_timeout(500)
+
+        # Upload the sample image so there are pixels underneath the shape.
+        with page_box.expect_file_chooser() as fc_box:
+            page_box.click("#iconAddImage")
+        fc_box.value.set_files(SAMPLE_IMG)
+        page_box.wait_for_timeout(500)
+
+        # Add a rect layer on top — this is the censor shape.
+        page_box.click("#btnAddRect")
+        page_box.wait_for_timeout(150)
+        st_box = page_box.evaluate("window.__test.getState()")
+        rect_id = next(l["id"] for l in st_box["layers"] if l["type"] == "rect")
+        check("censor-shape: rect layer created", rect_id is not None)
+
+        # Select the rect so the props panel shows.
+        page_box.evaluate("(id) => window.__test.selectLayer(id)", rect_id)
+        page_box.wait_for_timeout(150)
+
+        # Verify default mode is 'color'.
+        st_rect = page_box.evaluate("window.__test.getState()")
+        rect_layer = next(l for l in st_rect["layers"] if l["id"] == rect_id)
+        check("censor-shape: default mode is 'color'", (rect_layer.get("mode") or "color") == "color")
+
+        # Export at 1x with color mode as baseline.
+        page_box.evaluate("document.getElementById('exportScale').value = '1'")
+        page_box.evaluate("document.getElementById('exportScale').dispatchEvent(new Event('change'))")
+        page_box.wait_for_timeout(100)
+        with page_box.expect_download() as dl_color:
+            page_box.click("#btnExport")
+        color_export_path = os.path.join(OUT_DIR, "censor_color_export.png")
+        dl_color.value.save_as(color_export_path)
+        img_color = Image.open(color_export_path)
+        check("censor-shape: color-mode export is valid PNG", img_color.size[0] > 0)
+
+        import hashlib
+        def img_hash(path):
+            return hashlib.md5(open(path, 'rb').read()).hexdigest()
+
+        # Switch to blur mode via the seg button in the rect props panel.
+        page_box.evaluate("""
+        () => {
+          const btns = document.querySelectorAll('#rModeSeg button');
+          const blurBtn = [...btns].find(b => b.dataset.v === 'blur');
+          if (blurBtn) blurBtn.click();
+        }
+        """)
+        page_box.wait_for_timeout(150)
+        st_blur = page_box.evaluate("window.__test.getState()")
+        rect_blur = next(l for l in st_blur["layers"] if l["id"] == rect_id)
+        check("censor-shape: blur mode set in state", rect_blur.get("mode") == "blur")
+
+        with page_box.expect_download() as dl_blur:
+            page_box.click("#btnExport")
+        blur_export_path = os.path.join(OUT_DIR, "censor_blur_export.png")
+        dl_blur.value.save_as(blur_export_path)
+        img_blur = Image.open(blur_export_path)
+        check("censor-shape: blur export is a valid PNG of the same size",
+              img_blur.size == img_color.size, f"{img_color.size} vs {img_blur.size}")
+        check("censor-shape: blur export is visually distinct from color export",
+              img_hash(blur_export_path) != img_hash(color_export_path))
+
+        # Switch to pixelate mode.
+        page_box.evaluate("""
+        () => {
+          const btns = document.querySelectorAll('#rModeSeg button');
+          const pixBtn = [...btns].find(b => b.dataset.v === 'pixelate');
+          if (pixBtn) pixBtn.click();
+        }
+        """)
+        page_box.wait_for_timeout(150)
+        st_pix = page_box.evaluate("window.__test.getState()")
+        rect_pix = next(l for l in st_pix["layers"] if l["id"] == rect_id)
+        check("censor-shape: pixelate mode set in state", rect_pix.get("mode") == "pixelate")
+
+        with page_box.expect_download() as dl_pix:
+            page_box.click("#btnExport")
+        pix_export_path = os.path.join(OUT_DIR, "censor_pixelate_export.png")
+        dl_pix.value.save_as(pix_export_path)
+        img_pix = Image.open(pix_export_path)
+        check("censor-shape: pixelate export is a valid PNG of the same size",
+              img_pix.size == img_color.size)
+        check("censor-shape: pixelate export is visually distinct from color export",
+              img_hash(pix_export_path) != img_hash(color_export_path))
+        check("censor-shape: pixelate export is visually distinct from blur export",
+              img_hash(pix_export_path) != img_hash(blur_export_path))
+        check("censor-shape: no page errors throughout", len(errors_box) == 0, str(errors_box))
+        ctx_box.close()
+
+        # ---- layer preview thumbnails regression test ----
+        preview_check = page.evaluate("""() => {
+            const canvas = document.querySelector('.layerrow .layer-preview canvas.thumb-canvas');
+            const badge = document.querySelector('.layerrow .layer-preview .mini-typebadge');
+            return {
+                hasCanvas: !!canvas,
+                hasBadge: !!badge,
+                canvasAttrId: canvas ? canvas.getAttribute('data-id') : null
+            };
+        }""")
+        check("layer-preview: thumb-canvas exists in row", preview_check["hasCanvas"])
+        check("layer-preview: mini-typebadge exists in row", preview_check["hasBadge"])
+        check("layer-preview: thumb-canvas has valid layer data-id", preview_check["canvasAttrId"] is not None)
+
         ctx.close()
 
         # ---- fresh profile, nothing saved yet ----

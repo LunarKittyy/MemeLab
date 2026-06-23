@@ -110,7 +110,9 @@ function onPointerDown(evt) {
     }
     if (!sel.locked && sel.visible && pointInLayerBounds(sel, p.x, p.y)) {
       stage.setPointerCapture(evt.pointerId);
-      drag = { kind: 'move', layer: sel, startX: p.x, startY: p.y, origX: sel.x, origY: sel.y };
+      const hit = hitLayerAt(p.x, p.y);
+      const potentialSelectId = (hit && hit.id !== sel.id) ? hit.id : null;
+      drag = { kind: 'move', layer: sel, startX: p.x, startY: p.y, origX: sel.x, origY: sel.y, hasMoved: false, potentialSelectId };
       return;
     }
   }
@@ -119,7 +121,7 @@ function onPointerDown(evt) {
   if (hit) {
     selectLayer(hit.id);
     stage.setPointerCapture(evt.pointerId);
-    drag = { kind: 'move', layer: hit, startX: p.x, startY: p.y, origX: hit.x, origY: hit.y };
+    drag = { kind: 'move', layer: hit, startX: p.x, startY: p.y, origX: hit.x, origY: hit.y, hasMoved: false };
   } else {
     selectLayer(null);
   }
@@ -137,6 +139,9 @@ function onPointerMove(evt) {
   if (drag.kind === 'move') {
     layer.x = drag.origX + (p.x - drag.startX);
     layer.y = drag.origY + (p.y - drag.startY);
+    if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 3) {
+      drag.hasMoved = true;
+    }
   } else if (drag.kind === 'pinch') {
     const pts = [...activeTouches.values()];
     if (pts.length < 2 || drag.dist0 < 1e-3) return;
@@ -183,6 +188,18 @@ function onPointerUp(evt) {
   if (evt.pointerType === 'touch') activeTouches.delete(evt.pointerId);
   if (!drag) return;
   if (drag.kind === 'pinch' && activeTouches.size >= 2) return;
+  
+  const d = drag;
   drag = null;
-  pushHistory();
+
+  if (d.kind === 'move' && !d.hasMoved) {
+    d.layer.x = d.origX;
+    d.layer.y = d.origY;
+    scheduleRender();
+    if (d.potentialSelectId) {
+      selectLayer(d.potentialSelectId);
+    }
+  } else {
+    pushHistory();
+  }
 }

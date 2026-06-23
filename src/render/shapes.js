@@ -1,5 +1,6 @@
 import { ensureImage } from '../core/state.js';
 import { drawRoundedRect } from './text.js';
+import { applyBoxEffect } from './boxEffects.js';
 
 export { drawRoundedRect };
 
@@ -19,15 +20,25 @@ export function drawImageLayer(ctx, layer) {
 }
 
 export function drawRectLayer(ctx, layer) {
-  drawRoundedRect(ctx, 0, 0, layer.w, layer.h, layer.radius);
-  ctx.fillStyle = layer.color;
-  ctx.fill();
+  const mode = layer.mode || 'color';
+  if (mode === 'blur' || mode === 'pixelate') {
+    // Delegate sampling + redraw to boxEffects; it reads whatever is already
+    // composited below this layer and applies the censor effect into the rect.
+    applyBoxEffect(ctx, layer);
+  } else {
+    drawRoundedRect(ctx, 0, 0, layer.w, layer.h, layer.radius);
+    ctx.fillStyle = layer.color;
+    ctx.fill();
+  }
+  // Stroke is drawn on top regardless of mode.
   if (layer.strokeWidth > 0) {
+    drawRoundedRect(ctx, 0, 0, layer.w, layer.h, layer.radius);
     ctx.lineWidth = layer.strokeWidth;
     ctx.strokeStyle = layer.strokeColor;
     ctx.stroke();
   }
 }
+
 
 export function drawCover(ctx, img, x, y, w, h, fit) {
   const iw = img.naturalWidth, ih = img.naturalHeight;

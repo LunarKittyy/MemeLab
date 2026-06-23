@@ -3,7 +3,7 @@ import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { byId } from './shared.js';
 import { renderPropsPanel } from './panel.js';
-import { setPendingImageTarget, triggerFilePicker, syncBgControls } from '../toolbar.js';
+import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 
 export function backgroundPropsHtml() {
   const bg = state.background;
@@ -36,12 +36,11 @@ export function backgroundPropsHtml() {
 export function wireBackgroundProps() {
   byId('bgPropTypeSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     state.background.type = b.dataset.v;
-    syncBgControls();
     renderPropsPanel();
     scheduleRender(); pushHistory();
   }));
-  if (byId('bgPropColor')) byId('bgPropColor').addEventListener('input', (e) => { state.background.color = e.target.value; syncBgControls(); scheduleRender(); });
+  if (byId('bgPropColor')) byId('bgPropColor').addEventListener('input', (e) => { state.background.color = e.target.value; scheduleRender(); });
   if (byId('bgPropColor')) byId('bgPropColor').addEventListener('change', pushHistory);
   if (byId('bgPropUpload')) byId('bgPropUpload').addEventListener('click', () => { setPendingImageTarget('background'); triggerFilePicker(); });
-  if (byId('bgPropFit')) byId('bgPropFit').addEventListener('change', (e) => { state.background.fit = e.target.value; syncBgControls(); scheduleRender(); pushHistory(); });
+  if (byId('bgPropFit')) byId('bgPropFit').addEventListener('change', (e) => { state.background.fit = e.target.value; scheduleRender(); pushHistory(); });
 }

@@ -49,7 +49,7 @@ export function wireCommonTransformProps(layer) {
 }
 
 export function actionsHtml() {
-  return `<div class="section"><div class="row"><button class="smallbtn full" id="pDup">Duplicate</button><button class="smallbtn full danger" id="pDel" style="color:var(--danger);border-color:var(--danger);">Delete</button></div></div>`;
+  return `<div class="section"><div class="row"><button class="smallbtn full" id="pDup">Duplicate</button><button class="smallbtn full danger" id="pDel">Delete</button></div></div>`;
 }
 
 export function wireActions(layer) {

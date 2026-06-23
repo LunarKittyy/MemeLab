@@ -1,8 +1,14 @@
+import { state, getLayerById, ensureImage } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { byId, rangeRow, transformHtml, actionsHtml, wireActions } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
+import { renderLayerList, setLastCreatedLayerId } from '../layerList.js';
+import { removeBg } from '../../cutout/aiSegmentation.js';
+import { splitLayerByMask } from '../../cutout/split.js';
+import { selectLayer } from '../../interactions/pointer.js';
+import { ICONS } from '../icons.js';
 
 export function imagePropsHtml(layer) {
   return `
@@ -21,14 +27,28 @@ export function imagePropsHtml(layer) {
       </div>
       ${rangeRow('Exposure', 'iExposure', -100, 100, 1, layer.exposure ?? 0)}
     </div>
+    <div class="section" id="aiSection">
+      <div class="section-title">AI Tools</div>
+      <div class="row">
+        <button class="smallbtn full" id="iBgRemove" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+          <span class="icon" style="width:13px;height:13px;display:flex;align-items:center;">${ICONS.sparkles}</span>
+          Remove background
+        </button>
+      </div>
+      <div id="aiProgress" style="display:none;">
+        <div class="ai-progress-label" id="aiProgressLabel">Loading model…</div>
+        <div class="ai-progress-track"><div class="ai-progress-bar" id="aiProgressBar"></div></div>
+      </div>
+      <div id="aiError" class="ai-error" style="display:none;"></div>
+    </div>
     ${transformHtml(layer)}
     ${actionsHtml()}`;
 }
 
 export function wireImageProps(layer) {
   byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
-  byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory(); });
-  byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory(); });
+  byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
+  byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
   byId('iExposure').addEventListener('input', (e) => {
     layer.exposure = Number(e.target.value);
@@ -36,5 +56,88 @@ export function wireImageProps(layer) {
     scheduleRender();
   });
   byId('iExposure').addEventListener('change', () => pushHistory());
+
+  // ---- AI background removal ----
+  byId('iBgRemove').addEventListener('click', () => runBgRemoval(layer));
+
   wireActions(layer);
+}
+
+function setProgress(label, pct) {
+  const prog = byId('aiProgress');
+  if (!prog) return;
+  prog.style.display = 'block';
+  byId('aiProgressLabel').textContent = label;
+  byId('aiProgressBar').style.width = Math.round(pct * 100) + '%';
+}
+
+function hideProgress() {
+  const prog = byId('aiProgress');
+  if (prog) prog.style.display = 'none';
+}
+
+function showAiError(msg) {
+  const el = byId('aiError');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
+}
+
+async function runBgRemoval(layer) {
+  const btn = byId('iBgRemove');
+  if (!btn || btn.disabled) return;
+
+  btn.disabled = true;
+  byId('aiError') && (byId('aiError').style.display = 'none');
+
+  const img = ensureImage(layer.src);
+  if (!img || !img.complete || !img.naturalWidth) {
+    showAiError('Image not loaded yet — try again in a moment.');
+    btn.disabled = false;
+    return;
+  }
+
+  setProgress('Starting AI cutout...', 0.05);
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  try {
+    const maskCanvas = await removeBg(img, (phase, pct) => {
+      if (phase === 'download') {
+        setProgress(`Downloading model… ${Math.round(pct * 100)}%`, pct * 0.7);
+      } else if (phase === 'init') {
+        setProgress('Initialising model…', 0.7 + pct * 0.15);
+      } else if (phase === 'inference') {
+        setProgress(pct < 1 ? 'Running AI…' : 'Processing mask…', 0.85 + pct * 0.15);
+      } else if (phase === 'ready') {
+        setProgress('Ready', 1);
+      }
+    });
+
+    // Check the layer still exists (user might have deleted it while waiting).
+    const currentLayer = getLayerById(layer.id);
+    if (!currentLayer) {
+      hideProgress();
+      btn.disabled = false;
+      return;
+    }
+
+    setProgress('Applying mask…', 1);
+
+    const { keptLayer, restLayer } = splitLayerByMask(currentLayer, maskCanvas);
+
+    const idx = state.layers.findIndex((l) => l.id === layer.id);
+    state.layers.splice(idx, 1, restLayer, keptLayer);
+
+    setLastCreatedLayerId([restLayer.id, keptLayer.id]);
+    selectLayer(keptLayer.id);
+    pushHistory('Remove background (AI)');
+    hideProgress();
+  } catch (err) {
+    console.error('AI background removal failed:', err);
+    showAiError('Failed: ' + (err.message || 'Unknown error'));
+    hideProgress();
+  } finally {
+    if (byId('iBgRemove')) byId('iBgRemove').disabled = false;
+  }
 }
