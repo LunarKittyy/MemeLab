@@ -190,8 +190,25 @@ export function wireGlobalUI() {
   document.getElementById('customW').addEventListener('change', (e) => { state.width = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
   document.getElementById('customH').addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
 
+  let _resetPending = false, _resetTimer = null;
   document.getElementById('btnReset').addEventListener('click', () => {
-    if (!confirm('Clear the canvas? This removes all layers and resets the background.')) return;
+    if (!_resetPending) {
+      _resetPending = true;
+      const btn = document.getElementById('btnReset');
+      btn.textContent = 'Are you sure?';
+      btn.classList.add('danger');
+      _resetTimer = setTimeout(() => {
+        _resetPending = false;
+        btn.textContent = 'Reset canvas';
+        btn.classList.remove('danger');
+      }, 3000);
+      return;
+    }
+    clearTimeout(_resetTimer);
+    _resetPending = false;
+    const btn = document.getElementById('btnReset');
+    btn.textContent = 'Reset canvas';
+    btn.classList.remove('danger');
     state.layers = [];
     state.background = { type: 'color', color: '#ffffff', src: null, fit: 'cover' };
     state.selectedId = null;
