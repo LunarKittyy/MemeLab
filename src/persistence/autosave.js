@@ -31,17 +31,10 @@ export function scheduleAutosave() {
 async function doAutosave() {
   try {
     const snap = snapshot();
-    // IndexedDB stores structured data directly and has a quota in the
-    // hundreds-of-MB-to-GB range (vs. the old 5MB ceiling this project used
-    // to be built around), so there's no need to downscale/recompress
-    // images before saving here the way the original Claude-artifact
-    // version had to.
     const ok = await idbSet(SAVE_KEY, snap);
     setSaveStatus(ok ? 'saved' : 'error');
   } catch (e) {
     console.error('Autosave failed:', e);
-    // Most likely cause if this throws is the storage quota actually being
-    // exceeded (very large projects with many full-resolution photos).
     setSaveStatus('toobig');
   }
 }
@@ -67,7 +60,6 @@ function applyLoadedSnapshot(snap) {
   state.height = snap.height || 1080;
   state.background = snap.background || { type: 'color', color: '#ffffff', src: null, fit: 'cover' };
   state.layers = Array.isArray(snap.layers) ? snap.layers : [];
-  // Migrate text layers that pre-date sizeScale: derive scale from absolute size + box height.
   state.layers.forEach((l) => {
     if (l.type === 'text' && l.sizeScale === undefined && l.size && l.h) {
       l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
@@ -86,6 +78,6 @@ export async function tryLoadAutosave() {
     applyLoadedSnapshot(snap);
     return true;
   } catch (e) {
-    return false; // no saved project yet, or it couldn't be read — start fresh
+    return false;
   }
 }

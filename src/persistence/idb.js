@@ -1,7 +1,3 @@
-// A tiny generic key-value layer over IndexedDB. One database, one object
-// store, plain structured-clone values (no need to JSON.stringify/parse —
-// IndexedDB stores objects, strings, etc. natively).
-
 const DB_NAME = 'memelab';
 const DB_VERSION = 1;
 const STORE = 'kv';

@@ -13,9 +13,6 @@ export function snapshot() {
   };
 }
 
-// Anything that should happen whenever a new history checkpoint is committed
-// (autosave, undo/redo button state) is registered here rather than imported
-// statically, so this module doesn't need to know who's listening.
 const commitListeners = [];
 export function onHistoryCommit(fn) {
   commitListeners.push(fn);
@@ -31,7 +28,6 @@ export function pushHistory(label) {
   commitListeners.forEach((fn) => fn());
 }
 
-// Returns the full history stack as display entries for the context menu.
 export function getHistoryEntries() {
   return history.map((snap, i) => ({
     index: i,
@@ -40,7 +36,6 @@ export function getHistoryEntries() {
   }));
 }
 
-// Jump directly to any history index without calling pushHistory.
 export function jumpToHistory(index) {
   if (index < 0 || index >= history.length) return;
   historyIndex = index;

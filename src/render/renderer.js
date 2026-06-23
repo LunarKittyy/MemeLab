@@ -115,8 +115,6 @@ export function renderScene(ctx, opts) {
   if (!opts.forExport) drawSelectionOverlay(ctx);
 }
 
-// Draw an explicit list of layers (no background, no selection overlay).
-// Used by mergeLayerDown to composite exactly two layers onto an offscreen canvas.
 export function renderLayersToCtx(ctx, layers) {
   for (const layer of layers) drawLayer(ctx, layer, null);
 }

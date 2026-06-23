@@ -1,4 +1,3 @@
-// --- Color math ---
 function hexToRgb(hex) {
   hex = (hex || '#000000').replace(/^#/, '');
   if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -30,7 +29,6 @@ function hsvToRgb(h, s, v) {
 }
 function hsvToHex(h, s, v) { const { r, g, b } = hsvToRgb(h, s, v); return rgbToHex(r, g, b); }
 
-// --- Singleton picker ---
 let _picker = null, _svCanvas, _svCtx, _hueCanvas, _hueCtx, _hexInput, _preview;
 let _h = 0, _s = 1, _v = 1;
 let _onChange = null, _anchorEl = null;
@@ -58,7 +56,6 @@ function buildPicker() {
   _hexInput = el.querySelector('.cp-hex');
   _preview = el.querySelector('.cp-preview');
 
-  // Draw static hue strip
   const hg = _hueCtx.createLinearGradient(0, 0, SV_W, 0);
   for (let i = 0; i <= 6; i++) hg.addColorStop(i / 6, `hsl(${i * 60},100%,50%)`);
   _hueCtx.fillStyle = hg;

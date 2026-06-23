@@ -20,12 +20,10 @@ function escapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-// ---- Drag-to-reorder state ----
-let dragState = null; // { layerId, startIdx, pointerStartY, dragging }
+let dragState = null;
 let _suppressNextClick = false;
 
 function getLayerRowIndex(li) {
-  // li has data-layer-idx set during render; returns state.layers index.
   return parseInt(li.dataset.layerIdx, 10);
 }
 
@@ -36,7 +34,6 @@ function clearDragIndicators(ul) {
 }
 
 function getDragTarget(ul, clientY) {
-  // Returns { li, position: 'before'|'after' } for the row under the pointer.
   const rows = [...ul.querySelectorAll('.layerrow:not(.bgrow):not(.dragging-source)')].reverse();
   for (const row of rows) {
     const r = row.getBoundingClientRect();
@@ -53,7 +50,6 @@ function commitDrag(ul, clientY) {
   if (!target || !dragState) return;
   const fromIdx = dragState.startIdx;
   const toStateIdx = getLayerRowIndex(target.li);
-  // 'before' in the list (rendered top→bottom = high→low z) means higher z-index.
   const destIdx = target.position === 'before' ? toStateIdx : toStateIdx - 1;
   if (fromIdx === destIdx || fromIdx === destIdx + 1) return;
   const [layer] = state.layers.splice(fromIdx, 1);
@@ -81,7 +77,7 @@ export function renderLayerList() {
       li.classList.add('new-layer-pop');
     }
     li.dataset.id = l.id;
-    li.dataset.layerIdx = i; // state.layers index for drag calculation
+    li.dataset.layerIdx = i;
     li.innerHTML = `
       <div class="layer-preview">
         <img class="thumb-img" data-id="${l.id}" width="60" height="60" alt="" draggable="false" />
@@ -107,7 +103,6 @@ export function renderLayerList() {
       if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
     });
 
-    // ---- Per-row drag listeners ----
     li.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button') || e.target.closest('input')) return;
       const startX = e.clientX, startY = e.clientY;
@@ -120,8 +115,6 @@ export function renderLayerList() {
         ul.setPointerCapture(e.pointerId);
       }
 
-      // Handle vs rest of row: handle uses a tighter threshold and falls back to
-      // selecting the layer on click; rest of row uses a looser touch threshold.
       const threshold = fromHandle ? 4 : (e.pointerType === 'touch' ? 10 : 3);
 
       function onMoveEarly(me) {
@@ -144,7 +137,6 @@ export function renderLayerList() {
     ul.appendChild(li);
   }
 
-  // ---- Global drag move / up / cancel on the ul ----
   ul.onpointermove = (e) => {
     if (!dragState || !dragState.dragging) return;
     clearDragIndicators(ul);
@@ -157,7 +149,6 @@ export function renderLayerList() {
       clearDragIndicators(ul);
       commitDrag(ul, e.clientY);
       document.querySelectorAll('.dragging-source').forEach(el => el.classList.remove('dragging-source'));
-      // Suppress the click that fires after pointerup so buttons under the drop point don't trigger.
       _suppressNextClick = true;
       setTimeout(() => { _suppressNextClick = false; }, 0);
     }
@@ -219,14 +210,11 @@ export function duplicateLayer(id) {
 }
 
 
-// ---- Merge layer down ----
 export function mergeLayerDown(id) {
   const idx = state.layers.findIndex((l) => l.id === id);
-  if (idx <= 0) return; // nothing below
+  if (idx <= 0) return;
   const topLayer    = state.layers[idx];
   const bottomLayer = state.layers[idx - 1];
-
-  // Composite both layers onto a full-canvas offscreen at logical size.
   const W = state.width, H = state.height;
   const off = document.createElement('canvas');
   off.width = W; off.height = H;
@@ -250,7 +238,6 @@ export function mergeLayerDown(id) {
   pushHistory('Merge layer down');
 }
 
-// ---- Layer depth / sorting helpers ----
 export function moveLayerUp(id) {
   const idx = state.layers.findIndex((l) => l.id === id);
   if (idx === -1 || idx === state.layers.length - 1) return;

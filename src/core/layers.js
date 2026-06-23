@@ -11,9 +11,7 @@ export const FONT_OPTIONS = [
 
 export function defaultTextLayer() {
   counters.text++;
-  // sizeScale: font size as a fraction of layer height.
-  // 0.6 means the font occupies ~60% of the box height by default.
-  const sizeScale = 0.6;
+  const sizeScale = 0.6; // fraction of layer height
   const w = Math.round(state.width * 0.74);
   const h = Math.round(state.width * 0.09 / sizeScale);
   const strokeW = Math.max(2, Math.round(state.width * 0.09 * 0.07));
@@ -54,9 +52,6 @@ export function defaultRectLayer() {
     id: nextId(), type: 'rect', name: 'Shape ' + counters.rect,
     x: Math.round((state.width - size) / 2), y: Math.round((state.height - size) / 2),
     w: size, h: size, rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: false,
-    // mode: 'color' | 'blur' | 'pixelate'  — blur/pixelate make the shape a censor bar.
-    // amount: blur radius (px) for 'blur', block size (px) for 'pixelate'.
-    // Default 'color' is identical to the old behaviour so existing saves are unaffected.
     mode: 'color', amount: 16,
     color: '#FF3D8A', radius: 0, strokeWidth: 0, strokeColor: '#000000',
   };

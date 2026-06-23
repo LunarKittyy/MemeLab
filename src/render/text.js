@@ -1,7 +1,5 @@
 
 export function resolvedFontSize(layer) {
-  // sizeScale is a fraction of the layer height (new model).
-  // Fall back to legacy absolute layer.size for old saves.
   if (layer.sizeScale !== undefined) return Math.max(1, Math.round(layer.sizeScale * layer.h));
   return layer.size || 40;
 }

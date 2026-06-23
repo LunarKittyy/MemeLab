@@ -1,5 +1,3 @@
-// Small stateless math helpers used across rendering and interaction code.
-
 export function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }

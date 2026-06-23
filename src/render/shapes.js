@@ -32,7 +32,6 @@ export function drawRectLayer(ctx, layer, backdrop) {
     ctx.fillStyle = layer.color;
     ctx.fill();
   }
-  // Stroke is drawn on top regardless of mode.
   if (layer.strokeWidth > 0) {
     drawRoundedRect(ctx, 0, 0, layer.w, layer.h, layer.radius);
     ctx.lineWidth = layer.strokeWidth;

@@ -3,8 +3,6 @@ import { clamp, deg2rad, rad2deg, rotVec } from '../core/utils.js';
 import { stage, dispScaleFactor, scheduleRender } from '../render/renderer.js';
 import { pushHistory } from '../core/history.js';
 
-// Anything that needs to react to selection changing (layer list highlight,
-// props panel content, the canvas redraw) registers here.
 const selectionListeners = [];
 export function onSelectionChange(fn) {
   selectionListeners.push(fn);
@@ -14,8 +12,6 @@ export function selectLayer(id) {
   selectionListeners.forEach((fn) => fn());
 }
 
-// Anything that wants a cheap, no-history-commit UI sync during an active
-// drag (the X/Y/W/H/rotation number fields in the props panel).
 const dragTickListeners = [];
 export function onDragTick(fn) {
   dragTickListeners.push(fn);

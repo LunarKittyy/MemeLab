@@ -1,19 +1,6 @@
 import { drawRoundedRect } from './text.js';
 
-// Sample pixels already composited beneath a layer's rect and apply blur/pixelate.
-//
-// Called by drawRectLayer (shapes.js) when layer.mode is 'blur' or 'pixelate'.
-// Layer fields used: x, y, w, h, rotation, mode, amount, radius (all on rect layers).
-//
-// Reading from ctx.canvas (not a hardcoded `stage` reference) means this works
-// identically for both the live-preview canvas and the export offscreen canvas.
-// ctx.getTransform() gives us the current scale (devicePixelRatio for preview,
-// export scale for export) so we can map layer-local coords → device pixels
-// without importing anything from renderer.js.
-//
-// Scope note: only handles the unrotated case; rotated censor boxes are a
-// deliberate follow-up (see PLAN.md §2 scope note).
-// Persistent scratch canvases to avoid per-frame allocations.
+// Persistent scratch canvas to avoid per-frame allocations.
 const _pixelateCanvas = document.createElement('canvas');
 const _pixelateCtx = _pixelateCanvas.getContext('2d');
 
@@ -29,12 +16,8 @@ export function applyBoxEffect(ctx, layer, backdrop) {
   ctx.clip();
 
   if (backdrop) {
-    // GPU-only path: sample from the pre-built backdrop canvas via drawImage.
-    // backdrop is at logical (state.width x state.height) with no DPR scaling,
-    // so layer.x/y/w/h map directly to source coords.
     if (mode === 'blur') {
-      // Sample a padded region so the blur kernel has real pixels at the edges
-      // instead of blending against transparent (which causes hazy wash-out).
+      // Pad the sampled region so the blur kernel has real pixels at edges instead of transparent.
       const pad = amount * 2;
       ctx.filter = `blur(${amount}px)`;
       ctx.drawImage(backdrop,
@@ -53,7 +36,7 @@ export function applyBoxEffect(ctx, layer, backdrop) {
       ctx.imageSmoothingEnabled = true;
     }
   } else {
-    // Fallback (export path): read pixels from the in-progress canvas.
+    // Export path: no backdrop available, read pixels from the in-progress canvas.
     const canvas = ctx.canvas;
     if (!canvas) { ctx.restore(); return; }
     const t = ctx.getTransform();
