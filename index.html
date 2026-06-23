@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Meme Lab</title>
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">MEME<span>LAB</span></div>
+  <div class="savestatus" id="saveStatus" title="Nothing to save yet"><span class="savedot idle" id="saveDot"></span></div>
+  <div class="topbar-spacer"></div>
+  <button class="iconbtn" id="btnUndo" title="Undo (Ctrl+Z)" disabled></button>
+  <button class="iconbtn" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled></button>
+  <div class="divider"></div>
+  <button class="panelbtn" id="btnOpenLeft">Layers</button>
+  <button class="panelbtn" id="btnOpenRight">Style</button>
+  <div class="divider"></div>
+  <select class="exportscale" id="exportScale" title="Export resolution">
+    <option value="1">1x export</option>
+    <option value="2" selected>2x export</option>
+    <option value="3">3x export</option>
+  </select>
+  <button class="primarybtn" id="btnExport">Export</button>
+</header>
+
+<div class="workspace">
+
+  <aside class="panel panel-left" id="panelLeft">
+    <div class="panel-header">Layers<button class="closebtn" id="closeLeft"></button></div>
+    <div class="panel-scroll">
+      <div class="add-row">
+        <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
+        <button class="addbtn" id="btnAddImage"><span class="icon" id="iconAddImage"></span>Image</button>
+        <button class="addbtn" id="btnAddRect"><span class="icon" id="iconAddRect"></span>Shape</button>
+        <input type="file" id="fileInput" accept="image/*">
+      </div>
+
+      <div class="section">
+        <div class="section-title">Canvas</div>
+        <div class="row">
+          <label>Size</label>
+          <select class="fullselect grow" id="sizePreset">
+            <option value="1080x1080">Square 1080</option>
+            <option value="1200x900">Classic 4:3</option>
+            <option value="1200x675">Wide 16:9</option>
+            <option value="1080x1920">Story 9:16</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        <div class="sizegrid" id="customSizeRow" style="display:none;margin-top:8px;">
+          <div class="numfield"><span>W</span><input class="fullinput" type="number" id="customW" min="50" max="4000"></div>
+          <div class="numfield"><span>H</span><input class="fullinput" type="number" id="customH" min="50" max="4000"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Background</div>
+        <div class="seg" id="bgTypeSeg">
+          <button data-v="color" class="active">Color</button>
+          <button data-v="image">Image</button>
+        </div>
+        <div class="row" id="bgColorRow" style="margin-top:8px;">
+          <label>Color</label>
+          <input type="color" id="bgColor" value="#ffffff">
+        </div>
+        <div id="bgImageRow" style="display:none;margin-top:8px;">
+          <button class="smallbtn full" id="btnBgImage">Upload background image</button>
+          <div class="row" style="margin-top:8px;">
+            <label>Fit</label>
+            <select class="fullselect grow" id="bgFit">
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="stretch">Stretch</option>
+            </select>
+          </div>
+          <button class="smallbtn full" id="btnBgRemove" style="margin-top:8px;">Remove image</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <button class="smallbtn full" id="btnReset">Reset canvas</button>
+      </div>
+
+      <div class="section" style="border-top:1px solid var(--border);">
+        <div class="section-title">Layers (top first)</div>
+      </div>
+      <ul class="layerlist" id="layerList"></ul>
+    </div>
+  </aside>
+
+  <main class="canvas-area" id="canvasArea">
+    <div id="canvasWrap">
+      <canvas id="stage"></canvas>
+    </div>
+    <div class="hint-toast" id="hintToast"></div>
+  </main>
+
+  <aside class="panel panel-right" id="panelRight">
+    <div class="panel-header">Style<button class="closebtn" id="closeRight"></button></div>
+    <div class="panel-scroll">
+      <div class="propsbody" id="propsBody">
+        <div class="empty-props">Select a layer to edit its style.</div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
