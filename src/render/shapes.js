@@ -12,8 +12,9 @@ export function drawImageLayer(ctx, layer) {
     ctx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1);
     ctx.translate(-layer.w / 2, -layer.h / 2);
   }
-  // Exposure adjustment lands in a later pass; it'll set ctx.filter here.
+  if (layer.exposure !== 0) ctx.filter = `brightness(${100 + layer.exposure}%)`;
   ctx.drawImage(img, 0, 0, layer.w, layer.h);
+  ctx.filter = 'none';
   ctx.restore();
 }
 
