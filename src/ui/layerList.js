@@ -104,7 +104,7 @@ export function renderLayerList() {
       </div>`;
     li.addEventListener('click', (e) => {
       if (_suppressNextClick) return;
-      if (!e.target.closest('button') && !e.target.closest('input')) selectLayer(l.id);
+      if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
     });
 
     // ---- Per-row drag listeners ----
@@ -120,12 +120,9 @@ export function renderLayerList() {
         ul.setPointerCapture(e.pointerId);
       }
 
-      // Handle: start immediately, no threshold needed.
-      if (fromHandle) { e.preventDefault(); startDrag(); return; }
-
-      // Elsewhere on the row: wait for movement threshold.
-      // Touch needs a larger threshold to avoid stealing scroll; desktop is hair-trigger.
-      const threshold = e.pointerType === 'touch' ? 10 : 3;
+      // Handle vs rest of row: handle uses a tighter threshold and falls back to
+      // selecting the layer on click; rest of row uses a looser touch threshold.
+      const threshold = fromHandle ? 4 : (e.pointerType === 'touch' ? 10 : 3);
 
       function onMoveEarly(me) {
         if (Math.hypot(me.clientX - startX, me.clientY - startY) > threshold) startDrag();
@@ -137,7 +134,7 @@ export function renderLayerList() {
         ul.removeEventListener('pointercancel', cancelOnUp);
       }
 
-      function cancelOnUp() { cancel(); }
+      function cancelOnUp() { cancel(); if (fromHandle) selectLayer(l.id); }
 
       ul.addEventListener('pointermove', onMoveEarly);
       ul.addEventListener('pointerup', cancelOnUp);
