@@ -1,6 +1,7 @@
 import { ensureImage } from '../core/state.js';
 import { pushHistory } from '../core/history.js';
 import { scheduleRender } from '../render/renderer.js';
+import { renderPropsPanel } from './props/panel.js';
 
 let _modal = null, _canvas = null, _ctx = null;
 let _layer = null, _img = null;
@@ -132,9 +133,15 @@ function dispToNorm() {
 }
 
 function apply() {
-  _layer.crop = dispToNorm();
+  const norm = dispToNorm();
+  _layer.crop = norm;
+  // Resize the layer to match the crop's aspect ratio, preserving width.
+  const cropW = norm.w * _img.naturalWidth;
+  const cropH = norm.h * _img.naturalHeight;
+  _layer.h = Math.max(1, Math.round(_layer.w * (cropH / cropW)));
   pushHistory('Crop image');
   scheduleRender();
+  renderPropsPanel();
   close();
 }
 

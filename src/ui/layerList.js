@@ -22,6 +22,7 @@ function escapeAttr(s) {
 
 // ---- Drag-to-reorder state ----
 let dragState = null; // { layerId, startIdx, pointerStartY, dragging }
+let _suppressNextClick = false;
 
 function getLayerRowIndex(li) {
   // li has data-layer-idx set during render; returns state.layers index.
@@ -83,7 +84,7 @@ export function renderLayerList() {
     li.dataset.layerIdx = i; // state.layers index for drag calculation
     li.innerHTML = `
       <div class="layer-preview">
-        <img class="thumb-img" data-id="${l.id}" width="60" height="60" alt="" />
+        <img class="thumb-img" data-id="${l.id}" width="60" height="60" alt="" draggable="false" />
         <div class="mini-typebadge">${typeBadgeIcon(l.type)}</div>
       </div>
       <input class="lname" value="${escapeAttr(l.name)}" data-id="${l.id}" />
@@ -93,44 +94,54 @@ export function renderLayerList() {
         <button class="micro dup" data-id="${l.id}">${ICONS.copy}</button>
         <button class="micro merge" data-id="${l.id}" ${i === 0 ? 'disabled title="Nothing below to merge into"' : 'title="Merge down"'}>${ICONS.mergeDown}</button>
         <button class="micro danger del" data-id="${l.id}">${ICONS.trash}</button>
+      </div>
+      <div class="layer-drag-handle" title="Drag to reorder">
+        <svg viewBox="0 0 8 14" fill="currentColor" width="10" height="14">
+          <circle cx="2" cy="2" r="1.4"/><circle cx="6" cy="2" r="1.4"/>
+          <circle cx="2" cy="7" r="1.4"/><circle cx="6" cy="7" r="1.4"/>
+          <circle cx="2" cy="12" r="1.4"/><circle cx="6" cy="12" r="1.4"/>
+        </svg>
       </div>`;
-    li.addEventListener('click', (e) => { if (!e.target.closest('button') && !e.target.closest('input')) selectLayer(l.id); });
+    li.addEventListener('click', (e) => {
+      if (_suppressNextClick) return;
+      if (!e.target.closest('button') && !e.target.closest('input')) selectLayer(l.id);
+    });
 
     // ---- Per-row drag listeners ----
     li.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button') || e.target.closest('input')) return;
-      const startY = e.clientY;
-      let timer = null;
-      const isTouch = e.pointerType === 'touch';
+      const startX = e.clientX, startY = e.clientY;
+      const fromHandle = !!e.target.closest('.layer-drag-handle');
 
       function startDrag() {
+        cancel();
         dragState = { layerId: l.id, startIdx: i, pointerStartY: startY, dragging: true };
         li.classList.add('dragging-source');
         ul.setPointerCapture(e.pointerId);
       }
 
-      if (!isTouch) {
-        // Desktop: start drag immediately on first move.
-        function onMoveEarly(me) {
-          if (Math.abs(me.clientY - startY) > 3) {
-            ul.removeEventListener('pointermove', onMoveEarly);
-            startDrag();
-          }
-        }
-        ul.addEventListener('pointermove', onMoveEarly);
-        li._cancelEarlyMove = () => ul.removeEventListener('pointermove', onMoveEarly);
-      } else {
-        // Touch: 300 ms longpress; cancel if moved more than 6 px first.
-        timer = setTimeout(startDrag, 300);
-        function onMoveCheck(me) {
-          if (Math.abs(me.clientY - startY) > 6) {
-            clearTimeout(timer);
-            ul.removeEventListener('pointermove', onMoveCheck);
-          }
-        }
-        ul.addEventListener('pointermove', onMoveCheck);
-        li._cancelTimer = () => { clearTimeout(timer); ul.removeEventListener('pointermove', onMoveCheck); };
+      // Handle: start immediately, no threshold needed.
+      if (fromHandle) { e.preventDefault(); startDrag(); return; }
+
+      // Elsewhere on the row: wait for movement threshold.
+      // Touch needs a larger threshold to avoid stealing scroll; desktop is hair-trigger.
+      const threshold = e.pointerType === 'touch' ? 10 : 3;
+
+      function onMoveEarly(me) {
+        if (Math.hypot(me.clientX - startX, me.clientY - startY) > threshold) startDrag();
       }
+
+      function cancel() {
+        ul.removeEventListener('pointermove', onMoveEarly);
+        ul.removeEventListener('pointerup', cancelOnUp);
+        ul.removeEventListener('pointercancel', cancelOnUp);
+      }
+
+      function cancelOnUp() { cancel(); }
+
+      ul.addEventListener('pointermove', onMoveEarly);
+      ul.addEventListener('pointerup', cancelOnUp);
+      ul.addEventListener('pointercancel', cancelOnUp);
     });
 
     ul.appendChild(li);
@@ -149,6 +160,9 @@ export function renderLayerList() {
       clearDragIndicators(ul);
       commitDrag(ul, e.clientY);
       document.querySelectorAll('.dragging-source').forEach(el => el.classList.remove('dragging-source'));
+      // Suppress the click that fires after pointerup so buttons under the drop point don't trigger.
+      _suppressNextClick = true;
+      setTimeout(() => { _suppressNextClick = false; }, 0);
     }
     dragState = null;
   };
@@ -165,7 +179,7 @@ export function renderLayerList() {
   bg.className = 'layerrow bgrow' + (state.selectedId === 'background' ? ' selected' : '');
   bg.innerHTML = `
     <div class="layer-preview">
-      <img class="thumb-img" data-id="background" width="60" height="60" alt="" />
+      <img class="thumb-img" data-id="background" width="60" height="60" alt="" draggable="false" />
       <div class="mini-typebadge">${ICONS.image}</div>
     </div>
     <div class="lname" style="padding:5px 0;">Background</div>`;
