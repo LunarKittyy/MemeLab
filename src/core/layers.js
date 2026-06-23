@@ -11,18 +11,20 @@ export const FONT_OPTIONS = [
 
 export function defaultTextLayer() {
   counters.text++;
-  const size = Math.round(state.width * 0.09);
+  // sizeScale: font size as a fraction of layer height.
+  // 0.6 means the font occupies ~60% of the box height by default.
+  const sizeScale = 0.6;
   const w = Math.round(state.width * 0.74);
-  const h = Math.round(size * 1.7);
+  const h = Math.round(state.width * 0.09 / sizeScale);
+  const strokeW = Math.max(2, Math.round(state.width * 0.09 * 0.07));
   return {
     id: nextId(), type: 'text', name: 'Text ' + counters.text,
     x: Math.round((state.width - w) / 2), y: Math.round((state.height - h) / 2),
     w, h, rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: false,
     text: 'Your text here',
-    font: 'MemeImpact', size, color: '#ffffff', align: 'center', vAlign: 'middle',
+    font: 'MemeImpact', sizeScale, color: '#ffffff', align: 'center', vAlign: 'middle',
     bold: false, italic: false, lineHeight: 1.15, letterSpacing: 0, padding: 14,
-    stroke: { enabled: true, color: '#000000', width: Math.max(2, Math.round(size * 0.07)) },
-    // mode: 'color' | 'blur' | 'pixelate' (blur/pixelate land in a later pass)
+    stroke: { enabled: true, color: '#000000', width: strokeW },
     box: { enabled: false, mode: 'color', color: '#ffffff', amount: 16 },
   };
 }
@@ -40,8 +42,8 @@ export function defaultImageLayer(src, naturalW, naturalH) {
     x: Math.round((state.width - w) / 2), y: Math.round((state.height - h) / 2),
     w, h, rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: true,
     src, naturalW, naturalH, flipX: false, flipY: false,
-    // exposure lands in a later pass; field reserved here so layer shape is stable
     exposure: 0,
+    crop: { x: 0, y: 0, w: 1, h: 1 },
   };
 }
 

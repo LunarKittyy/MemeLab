@@ -67,6 +67,12 @@ function applyLoadedSnapshot(snap) {
   state.height = snap.height || 1080;
   state.background = snap.background || { type: 'color', color: '#ffffff', src: null, fit: 'cover' };
   state.layers = Array.isArray(snap.layers) ? snap.layers : [];
+  // Migrate text layers that pre-date sizeScale: derive scale from absolute size + box height.
+  state.layers.forEach((l) => {
+    if (l.type === 'text' && l.sizeScale === undefined && l.size && l.h) {
+      l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
+    }
+  });
   state.selectedId = null;
   reconcileIdsAndCounters();
   if (state.background.src) ensureImage(state.background.src);

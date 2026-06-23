@@ -14,17 +14,19 @@ export function drawImageLayer(ctx, layer) {
     ctx.translate(-layer.w / 2, -layer.h / 2);
   }
   if (layer.exposure !== 0) ctx.filter = `brightness(${100 + layer.exposure}%)`;
-  ctx.drawImage(img, 0, 0, layer.w, layer.h);
+  const crop = layer.crop || { x: 0, y: 0, w: 1, h: 1 };
+  ctx.drawImage(img,
+    crop.x * img.naturalWidth, crop.y * img.naturalHeight,
+    crop.w * img.naturalWidth, crop.h * img.naturalHeight,
+    0, 0, layer.w, layer.h);
   ctx.filter = 'none';
   ctx.restore();
 }
 
-export function drawRectLayer(ctx, layer) {
+export function drawRectLayer(ctx, layer, backdrop) {
   const mode = layer.mode || 'color';
   if (mode === 'blur' || mode === 'pixelate') {
-    // Delegate sampling + redraw to boxEffects; it reads whatever is already
-    // composited below this layer and applies the censor effect into the rect.
-    applyBoxEffect(ctx, layer);
+    applyBoxEffect(ctx, layer, backdrop);
   } else {
     drawRoundedRect(ctx, 0, 0, layer.w, layer.h, layer.radius);
     ctx.fillStyle = layer.color;

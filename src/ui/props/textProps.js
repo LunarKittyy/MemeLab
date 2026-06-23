@@ -1,14 +1,11 @@
-import { state } from '../../core/state.js';
 import { FONT_OPTIONS } from '../../core/layers.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { ICONS } from '../icons.js';
 import { byId, rangeRow, escapeHtmlContent, transformHtml, actionsHtml, wireActions } from './shared.js';
 import { renderPropsPanel } from './panel.js';
-
-function fontOptionsHtml(selected) {
-  return FONT_OPTIONS.map((f) => `<option value='${f.value}' ${f.value === selected ? 'selected' : ''}>${f.label}</option>`).join('');
-}
+import { customSelectHtml, wireCustomSelect } from '../customSelect.js';
+import { colorSwatchHtml, wireColorSwatch } from '../colorPicker.js';
 
 export function textPropsHtml(layer) {
   return `
@@ -17,11 +14,11 @@ export function textPropsHtml(layer) {
       <textarea class="fullinput" id="tText">${escapeHtmlContent(layer.text)}</textarea>
       <div class="row" style="margin-top:8px;">
         <label>Font</label>
-        <select class="fullselect grow" id="tFont">${fontOptionsHtml(layer.font)}</select>
+        ${customSelectHtml('tFont', FONT_OPTIONS, layer.font, 'grow')}
       </div>
-      ${rangeRow('Size', 'tSize', 8, Math.round(state.width * 0.5), 1, layer.size)}
+      ${rangeRow('Scale', 'tSize', 5, 100, 1, Math.round((layer.sizeScale ?? 0.6) * 100))}
       <div class="row">
-        <label>Color</label><input type="color" id="tColor" value="${layer.color}">
+        <label>Color</label>${colorSwatchHtml('tColor', layer.color)}
         <div class="seg" style="margin-left:8px;">
           <button id="tBold" class="${layer.bold ? 'active' : ''}" style="font-weight:800;">B</button>
           <button id="tItalic" class="${layer.italic ? 'active' : ''}" style="font-style:italic;">I</button>
@@ -52,7 +49,7 @@ export function textPropsHtml(layer) {
         <label class="switch"><input type="checkbox" id="tStrokeOn" ${layer.stroke.enabled ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row" style="margin-top:10px;">
-        <label>Color</label><input type="color" id="tStrokeColor" value="${layer.stroke.color}">
+        <label>Color</label>${colorSwatchHtml('tStrokeColor', layer.stroke.color)}
       </div>
       ${rangeRow('Width', 'tStrokeWidth', 0, 40, 1, layer.stroke.width)}
     </div>
@@ -61,7 +58,7 @@ export function textPropsHtml(layer) {
         <label class="switch"><input type="checkbox" id="tBoxOn" ${layer.box.enabled ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
       <div class="row" style="margin-top:10px;">
-        <label>Color</label><input type="color" id="tBoxColor" value="${layer.box.color}">
+        <label>Color</label>${colorSwatchHtml('tBoxColor', layer.box.color)}
       </div>
     </div>
     ${transformHtml(layer)}
@@ -76,11 +73,11 @@ export function textPropsHtml(layer) {
 export function wireTextProps(layer) {
   byId('tText').addEventListener('input', (e) => { layer.text = e.target.value; scheduleRender(); });
   byId('tText').addEventListener('change', pushHistory);
-  byId('tFont').addEventListener('change', (e) => { layer.font = e.target.value; scheduleRender(); pushHistory(); });
-  byId('tSize').addEventListener('input', (e) => { layer.size = +e.target.value; byId('tSizeval').textContent = e.target.value; scheduleRender(); });
+  wireCustomSelect('tFont', (v) => { layer.font = v; scheduleRender(); pushHistory(); });
+  byId('tSize').addEventListener('input', (e) => { layer.sizeScale = +e.target.value / 100; byId('tSizeval').textContent = e.target.value + '%'; scheduleRender(); });
   byId('tSize').addEventListener('change', pushHistory);
-  byId('tColor').addEventListener('input', (e) => { layer.color = e.target.value; scheduleRender(); });
-  byId('tColor').addEventListener('change', pushHistory);
+  byId('tSizeval').textContent = Math.round((layer.sizeScale ?? 0.6) * 100) + '%';
+  wireColorSwatch('tColor', (hex) => { layer.color = hex; scheduleRender(); pushHistory(); });
   byId('tBold').addEventListener('click', () => { layer.bold = !layer.bold; renderPropsPanel(); scheduleRender(); pushHistory(); });
   byId('tItalic').addEventListener('click', () => { layer.italic = !layer.italic; renderPropsPanel(); scheduleRender(); pushHistory(); });
   byId('tAlignSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { layer.align = b.dataset.v; renderPropsPanel(); scheduleRender(); pushHistory(); }));
@@ -92,13 +89,11 @@ export function wireTextProps(layer) {
   byId('tPadding').addEventListener('input', (e) => { layer.padding = +e.target.value; byId('tPaddingval').textContent = e.target.value; scheduleRender(); });
   byId('tPadding').addEventListener('change', pushHistory);
   byId('tStrokeOn').addEventListener('change', (e) => { layer.stroke.enabled = e.target.checked; scheduleRender(); pushHistory(); });
-  byId('tStrokeColor').addEventListener('input', (e) => { layer.stroke.color = e.target.value; scheduleRender(); });
-  byId('tStrokeColor').addEventListener('change', pushHistory);
+  wireColorSwatch('tStrokeColor', (hex) => { layer.stroke.color = hex; scheduleRender(); pushHistory(); });
   byId('tStrokeWidth').addEventListener('input', (e) => { layer.stroke.width = +e.target.value; byId('tStrokeWidthval').textContent = e.target.value; scheduleRender(); });
   byId('tStrokeWidth').addEventListener('change', pushHistory);
   byId('tBoxOn').addEventListener('change', (e) => { layer.box.enabled = e.target.checked; scheduleRender(); pushHistory(); });
-  byId('tBoxColor').addEventListener('input', (e) => { layer.box.color = e.target.value; scheduleRender(); });
-  byId('tBoxColor').addEventListener('change', pushHistory);
+  wireColorSwatch('tBoxColor', (hex) => { layer.box.color = hex; scheduleRender(); pushHistory(); });
   byId('tAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
   wireActions(layer);
 }

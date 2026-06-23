@@ -1,8 +1,15 @@
 
+export function resolvedFontSize(layer) {
+  // sizeScale is a fraction of the layer height (new model).
+  // Fall back to legacy absolute layer.size for old saves.
+  if (layer.sizeScale !== undefined) return Math.max(1, Math.round(layer.sizeScale * layer.h));
+  return layer.size || 40;
+}
+
 export function buildFontString(layer) {
   const style = layer.italic ? 'italic ' : '';
   const weight = layer.bold ? 'bold ' : '';
-  return `${style}${weight}${layer.size}px ${layer.font}`;
+  return `${style}${weight}${resolvedFontSize(layer)}px ${layer.font}`;
 }
 
 function wrapParagraph(ctx, text, maxWidth) {
@@ -51,12 +58,13 @@ export function drawTextLayer(ctx, layer) {
     ctx.fill();
   }
   const lines = getWrappedLines(ctx, layer);
-  const lineHeight = layer.size * layer.lineHeight;
+  const fs = resolvedFontSize(layer);
+  const lineHeight = fs * layer.lineHeight;
   const totalH = lineHeight * lines.length;
   let startY;
-  if (layer.vAlign === 'top') startY = layer.padding + layer.size * 0.82;
-  else if (layer.vAlign === 'bottom') startY = layer.h - layer.padding - totalH + layer.size * 0.82;
-  else startY = (layer.h - totalH) / 2 + layer.size * 0.82;
+  if (layer.vAlign === 'top') startY = layer.padding + fs * 0.82;
+  else if (layer.vAlign === 'bottom') startY = layer.h - layer.padding - totalH + fs * 0.82;
+  else startY = (layer.h - totalH) / 2 + fs * 0.82;
 
   let xPos;
   ctx.textAlign = layer.align;

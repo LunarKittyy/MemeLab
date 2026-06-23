@@ -9,12 +9,14 @@ import { removeBg } from '../../cutout/aiSegmentation.js';
 import { splitLayerByMask } from '../../cutout/split.js';
 import { selectLayer } from '../../interactions/pointer.js';
 import { ICONS } from '../icons.js';
+import { openCropModal } from '../cropModal.js';
 
 export function imagePropsHtml(layer) {
   return `
     <div class="section">
       <div class="section-title">Image</div>
       <div class="row"><button class="smallbtn full" id="iReplace">Replace image</button></div>
+      <div class="row"><button class="smallbtn full" id="iCrop">Crop</button></div>
       <div class="row">
         <label>Flip</label>
         <div class="seg">
@@ -47,6 +49,7 @@ export function imagePropsHtml(layer) {
 
 export function wireImageProps(layer) {
   byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
+  byId('iCrop').addEventListener('click', () => openCropModal(layer));
   byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });

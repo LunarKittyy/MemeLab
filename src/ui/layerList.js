@@ -1,6 +1,6 @@
 import { state, getLayerById, nextId } from '../core/state.js';
 import { pushHistory } from '../core/history.js';
-import { scheduleRender, renderLayersToCtx } from '../render/renderer.js';
+import { scheduleRender, renderLayersToCtx, updateThumbnails } from '../render/renderer.js';
 import { selectLayer } from '../interactions/pointer.js';
 import { ICONS } from './icons.js';
 import { renderPropsPanel } from './props/panel.js';
@@ -83,7 +83,7 @@ export function renderLayerList() {
     li.dataset.layerIdx = i; // state.layers index for drag calculation
     li.innerHTML = `
       <div class="layer-preview">
-        <canvas class="thumb-canvas" data-id="${l.id}" width="60" height="60"></canvas>
+        <img class="thumb-img" data-id="${l.id}" width="60" height="60" alt="" />
         <div class="mini-typebadge">${typeBadgeIcon(l.type)}</div>
       </div>
       <input class="lname" value="${escapeAttr(l.name)}" data-id="${l.id}" />
@@ -165,7 +165,7 @@ export function renderLayerList() {
   bg.className = 'layerrow bgrow' + (state.selectedId === 'background' ? ' selected' : '');
   bg.innerHTML = `
     <div class="layer-preview">
-      <canvas class="thumb-canvas" data-id="background" width="60" height="60"></canvas>
+      <img class="thumb-img" data-id="background" width="60" height="60" alt="" />
       <div class="mini-typebadge">${ICONS.image}</div>
     </div>
     <div class="lname" style="padding:5px 0;">Background</div>`;
@@ -182,6 +182,7 @@ export function renderLayerList() {
     inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
   });
   lastCreatedLayerId = null;
+  updateThumbnails();
 }
 
 export function deleteLayer(id) {

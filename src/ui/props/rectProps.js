@@ -1,7 +1,7 @@
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { byId, rangeRow, transformHtml, actionsHtml, wireActions } from './shared.js';
-import { renderPropsPanel } from './panel.js';
+import { colorSwatchHtml, wireColorSwatch } from '../colorPicker.js';
 
 export function rectPropsHtml(layer) {
   const mode = layer.mode || 'color';
@@ -17,14 +17,14 @@ export function rectPropsHtml(layer) {
         </div>
       </div>
       <div id="rColorRow" style="${mode !== 'color' ? 'display:none' : ''}">
-        <div class="row"><label>Fill</label><input type="color" id="rColor" value="${layer.color}"></div>
+        <div class="row"><label>Fill</label>${colorSwatchHtml('rColor', layer.color)}</div>
       </div>
       <div id="rAmountRow" style="${mode === 'color' ? 'display:none' : ''}">
         ${rangeRow('Amount', 'rAmount', 1, 80, 1, layer.amount || 16)}
       </div>
       ${rangeRow('Corner', 'rRadius', 0, Math.round(Math.min(layer.w, layer.h) / 2), 1, layer.radius)}
       ${rangeRow('Border', 'rStrokeW', 0, 40, 1, layer.strokeWidth)}
-      <div class="row"><label>Border</label><input type="color" id="rStrokeColor" value="${layer.strokeColor}"></div>
+      <div class="row"><label>Border</label>${colorSwatchHtml('rStrokeColor', layer.strokeColor)}</div>
     </div>
     ${transformHtml(layer)}
     ${actionsHtml()}`;
@@ -39,15 +39,13 @@ export function wireRectProps(layer) {
     byId('rModeSeg').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
     scheduleRender(); pushHistory();
   }));
-  byId('rColor').addEventListener('input', (e) => { layer.color = e.target.value; scheduleRender(); });
-  byId('rColor').addEventListener('change', pushHistory);
+  wireColorSwatch('rColor', (hex) => { layer.color = hex; scheduleRender(); pushHistory(); });
   byId('rAmount').addEventListener('input', (e) => { layer.amount = +e.target.value; byId('rAmountval').textContent = e.target.value; scheduleRender(); });
   byId('rAmount').addEventListener('change', pushHistory);
   byId('rRadius').addEventListener('input', (e) => { layer.radius = +e.target.value; byId('rRadiusval').textContent = e.target.value; scheduleRender(); });
   byId('rRadius').addEventListener('change', pushHistory);
   byId('rStrokeW').addEventListener('input', (e) => { layer.strokeWidth = +e.target.value; byId('rStrokeWval').textContent = e.target.value; scheduleRender(); });
   byId('rStrokeW').addEventListener('change', pushHistory);
-  byId('rStrokeColor').addEventListener('input', (e) => { layer.strokeColor = e.target.value; scheduleRender(); });
-  byId('rStrokeColor').addEventListener('change', pushHistory);
+  wireColorSwatch('rStrokeColor', (hex) => { layer.strokeColor = hex; scheduleRender(); pushHistory(); });
   wireActions(layer);
 }

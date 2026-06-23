@@ -4,6 +4,14 @@ import { scheduleRender } from '../../render/renderer.js';
 import { byId } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
+import { customSelectHtml, wireCustomSelect } from '../customSelect.js';
+import { colorSwatchHtml, wireColorSwatch } from '../colorPicker.js';
+
+const FIT_OPTIONS = [
+  { value: 'cover', label: 'Cover' },
+  { value: 'contain', label: 'Contain' },
+  { value: 'stretch', label: 'Stretch' },
+];
 
 export function backgroundPropsHtml() {
   const bg = state.background;
@@ -17,17 +25,13 @@ export function backgroundPropsHtml() {
         <button data-v="image" class="${bg.type === 'image' ? 'active' : ''}">Image</button>
       </div>
       <div class="row" style="${colorStyle}" id="bgPropColorRow">
-        <label>Color</label><input type="color" id="bgPropColor" value="${bg.color}">
+        <label>Color</label>${colorSwatchHtml('bgPropColor', bg.color)}
       </div>
       <div id="bgPropImageRow" style="${imageStyle}">
         <button class="smallbtn full" id="bgPropUpload">Upload image</button>
         <div class="row" style="margin-top:8px;">
           <label>Fit</label>
-          <select class="fullselect grow" id="bgPropFit">
-            <option value="cover" ${bg.fit === 'cover' ? 'selected' : ''}>Cover</option>
-            <option value="contain" ${bg.fit === 'contain' ? 'selected' : ''}>Contain</option>
-            <option value="stretch" ${bg.fit === 'stretch' ? 'selected' : ''}>Stretch</option>
-          </select>
+          ${customSelectHtml('bgPropFit', FIT_OPTIONS, bg.fit, 'grow')}
         </div>
       </div>
     </div>`;
@@ -39,8 +43,7 @@ export function wireBackgroundProps() {
     renderPropsPanel();
     scheduleRender(); pushHistory();
   }));
-  if (byId('bgPropColor')) byId('bgPropColor').addEventListener('input', (e) => { state.background.color = e.target.value; scheduleRender(); });
-  if (byId('bgPropColor')) byId('bgPropColor').addEventListener('change', pushHistory);
+  if (byId('bgPropColor')) wireColorSwatch('bgPropColor', (hex) => { state.background.color = hex; scheduleRender(); pushHistory(); });
   if (byId('bgPropUpload')) byId('bgPropUpload').addEventListener('click', () => { setPendingImageTarget('background'); triggerFilePicker(); });
-  if (byId('bgPropFit')) byId('bgPropFit').addEventListener('change', (e) => { state.background.fit = e.target.value; scheduleRender(); pushHistory(); });
+  if (byId('bgPropFit')) wireCustomSelect('bgPropFit', (v) => { state.background.fit = v; scheduleRender(); pushHistory(); });
 }

@@ -8,28 +8,11 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">MEME<span>LAB</span></div>
-  <div class="savestatus" id="saveStatus" title="Nothing to save yet"><span class="savedot idle" id="saveDot"></span></div>
-  <div class="topbar-spacer"></div>
-  <button class="iconbtn" id="btnUndo" title="Undo (Ctrl+Z)" disabled></button>
-  <button class="iconbtn" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled></button>
-  <div class="divider"></div>
-  <button class="iconbtn" id="btnOpenLeft" title="Layers"></button>
-  <button class="iconbtn" id="btnOpenRight" title="Style"></button>
-  <div class="divider"></div>
-  <select class="exportscale" id="exportScale" title="Export resolution">
-    <option value="1">1x export</option>
-    <option value="2" selected>2x export</option>
-    <option value="3">3x export</option>
-  </select>
-  <button class="primarybtn" id="btnExport">Export</button>
-</header>
+
 
 <div class="workspace">
 
   <aside class="panel panel-left" id="panelLeft">
-    <div class="panel-header">Layers<button class="closebtn" id="closeLeft"></button></div>
     <div class="panel-scroll">
       <div class="add-row">
         <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
@@ -76,7 +59,6 @@
   </main>
 
   <aside class="panel panel-right" id="panelRight">
-    <div class="panel-header">Style<button class="closebtn" id="closeRight"></button></div>
     <div class="panel-scroll">
       <div class="propsbody" id="propsBody">
         <div class="empty-props">Select a layer to edit its style.</div>
@@ -84,6 +66,22 @@
     </div>
   </aside>
 
+</div>
+
+<div class="floating-controls" id="floatingControls">
+  <button class="iconbtn" id="btnUndo" title="Undo (Ctrl+Z)" disabled></button>
+  <button class="iconbtn" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled></button>
+  <div class="divider"></div>
+  <button class="iconbtn panelbtn" id="btnOpenLeft" title="Layers"></button>
+  <button class="iconbtn panelbtn" id="btnOpenRight" title="Style"></button>
+  <div class="divider panelbtn-divider"></div>
+  <div class="savestatus" id="saveStatus" title="Nothing to save yet"><span class="savedot idle" id="saveDot"></span></div>
+  <select class="exportscale" id="exportScale" title="Export resolution">
+    <option value="1">1x export</option>
+    <option value="2" selected>2x export</option>
+    <option value="3">3x export</option>
+  </select>
+  <button class="primarybtn" id="btnExport">Export</button>
 </div>
 
 <div class="help-modal" id="helpModal">

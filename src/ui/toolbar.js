@@ -27,7 +27,7 @@ export function addTextLayerAction() {
   setLastCreatedLayerId(l.id);
   selectLayer(l.id);
   pushHistory('Add text layer');
-  openPanelMobile('right');
+  openPanelMobile('right', true);
   requestAnimationFrame(() => { const t = byId('tText'); if (t) { t.focus(); t.select(); } });
 }
 
@@ -61,7 +61,7 @@ function handleImageFile(file, target) {
         state.layers.push(l);
         setLastCreatedLayerId(l.id);
         selectLayer(l.id);
-        openPanelMobile('right');
+        openPanelMobile('right', true);
       }
       pushHistory('Add image layer');
       scheduleRender();
@@ -71,11 +71,19 @@ function handleImageFile(file, target) {
   reader.readAsDataURL(file);
 }
 
-export function openPanelMobile(side) {
+export function openPanelMobile(side, forceState) {
   if (window.innerWidth > 980) return;
+  const otherSide = side === 'left' ? 'Right' : 'Left';
+  document.getElementById('panel' + otherSide).classList.remove('open');
   const panel = side === 'left' ? document.getElementById('panelLeft') : document.getElementById('panelRight');
-  panel.classList.add('open');
-  document.getElementById('backdrop').classList.add('show');
+  const shouldOpen = forceState !== undefined ? forceState : !panel.classList.contains('open');
+  if (shouldOpen) {
+    panel.classList.add('open');
+    document.getElementById('backdrop').classList.add('show');
+  } else {
+    panel.classList.remove('open');
+    document.getElementById('backdrop').classList.remove('show');
+  }
 }
 export function toggleHelpModal() {
   const modal = document.getElementById('helpModal');
@@ -146,8 +154,6 @@ export function syncSizeInputs() {
 export function initIcons() {
   setIcon('btnUndo', 'undo');
   setIcon('btnRedo', 'redo');
-  setIcon('closeLeft', 'close');
-  setIcon('closeRight', 'close');
   setIcon('iconAddText', 'textT');
   setIcon('iconAddImage', 'image');
   setIcon('iconAddRect', 'shape');
@@ -223,7 +229,13 @@ export function wireGlobalUI() {
     });
 
     const rect = anchorBtn.getBoundingClientRect();
-    menu.style.top  = (rect.bottom + 4) + 'px';
+    if (rect.bottom > window.innerHeight / 2) {
+      menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+      menu.style.top = 'auto';
+    } else {
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.bottom = 'auto';
+    }
     menu.style.left = rect.left + 'px';
     document.body.appendChild(menu);
     menu.firstElementChild && menu.firstElementChild.focus();
@@ -259,8 +271,6 @@ export function wireGlobalUI() {
 
   document.getElementById('btnOpenLeft').addEventListener('click', () => openPanelMobile('left'));
   document.getElementById('btnOpenRight').addEventListener('click', () => openPanelMobile('right'));
-  document.getElementById('closeLeft').addEventListener('click', closeAllPanels);
-  document.getElementById('closeRight').addEventListener('click', closeAllPanels);
   document.getElementById('backdrop').addEventListener('click', closeAllPanels);
 
   document.getElementById('canvasArea').addEventListener('dragover', (e) => { e.preventDefault(); });

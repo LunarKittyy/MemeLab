@@ -18,7 +18,7 @@ export function dispScaleFactor() {
   return state.width / rect.width;
 }
 
-function drawLayer(ctx, layer) {
+function drawLayer(ctx, layer, backdrop) {
   if (!layer.visible) return;
   ctx.save();
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
@@ -27,7 +27,7 @@ function drawLayer(ctx, layer) {
   ctx.globalAlpha = clamp(layer.opacity, 0, 1);
   ctx.translate(-layer.w / 2, -layer.h / 2);
   if (layer.type === 'image') drawImageLayer(ctx, layer);
-  else if (layer.type === 'rect') drawRectLayer(ctx, layer);
+  else if (layer.type === 'rect') drawRectLayer(ctx, layer, backdrop);
   else if (layer.type === 'text') drawTextLayer(ctx, layer);
   ctx.restore();
 }
@@ -65,6 +65,34 @@ function drawSelectionOverlay(ctx) {
   ctx.restore();
 }
 
+let backdropCanvas = null;
+let backdropCtx = null;
+
+function buildBackdrop(W, H) {
+  if (!backdropCanvas || backdropCanvas.width !== W || backdropCanvas.height !== H) {
+    backdropCanvas = document.createElement('canvas');
+    backdropCanvas.width = W;
+    backdropCanvas.height = H;
+    backdropCtx = backdropCanvas.getContext('2d');
+  }
+  backdropCtx.clearRect(0, 0, W, H);
+  if (state.background.type === 'image' && state.background.src) {
+    const img = ensureImage(state.background.src);
+    if (img && img.complete && img.naturalWidth) {
+      drawCover(backdropCtx, img, 0, 0, W, H, state.background.fit);
+    } else {
+      backdropCtx.fillStyle = '#ffffff'; backdropCtx.fillRect(0, 0, W, H);
+    }
+  } else {
+    backdropCtx.fillStyle = state.background.color; backdropCtx.fillRect(0, 0, W, H);
+  }
+  for (const layer of state.layers) {
+    if (layer.type === 'rect' && (layer.mode === 'blur' || layer.mode === 'pixelate')) continue;
+    drawLayer(backdropCtx, layer, null);
+  }
+  return backdropCanvas;
+}
+
 export function renderScene(ctx, opts) {
   opts = opts || {};
   const W = state.width, H = state.height;
@@ -79,14 +107,18 @@ export function renderScene(ctx, opts) {
   } else {
     ctx.fillStyle = state.background.color; ctx.fillRect(0, 0, W, H);
   }
-  for (const layer of state.layers) drawLayer(ctx, layer);
+  const hasBoxEffect = !opts.forExport && state.layers.some(
+    l => l.visible && l.type === 'rect' && (l.mode === 'blur' || l.mode === 'pixelate')
+  );
+  const backdrop = hasBoxEffect ? buildBackdrop(W, H) : null;
+  for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
   if (!opts.forExport) drawSelectionOverlay(ctx);
 }
 
 // Draw an explicit list of layers (no background, no selection overlay).
 // Used by mergeLayerDown to composite exactly two layers onto an offscreen canvas.
 export function renderLayersToCtx(ctx, layers) {
-  for (const layer of layers) drawLayer(ctx, layer);
+  for (const layer of layers) drawLayer(ctx, layer, null);
 }
 
 let renderScheduled = false;
@@ -102,65 +134,56 @@ function doRender() {
   updateThumbnails();
 }
 
-export function updateThumbnails() {
-  const canvases = document.querySelectorAll('.thumb-canvas');
-  canvases.forEach((canvas) => {
-    const id = canvas.dataset.id;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
+const _thumbCanvas = document.createElement('canvas');
+_thumbCanvas.width = 60;
+_thumbCanvas.height = 60;
+const _thumbCtx = _thumbCanvas.getContext('2d');
 
-    // Draw dark checkerboard pattern
-    ctx.save();
-    ctx.fillStyle = '#16131c';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#24202d';
-    const size = 6;
-    for (let y = 0; y < h; y += size) {
-      for (let x = 0; x < w; x += size) {
-        if ((Math.floor(x / size) + Math.floor(y / size)) % 2 === 0) {
-          ctx.fillRect(x, y, size, size);
-        }
+function renderThumbToDataURL(id) {
+  const w = 60, h = 60;
+  const ctx = _thumbCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.save();
+  ctx.fillStyle = '#16131c';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#24202d';
+  const size = 6;
+  for (let y = 0; y < h; y += size) {
+    for (let x = 0; x < w; x += size) {
+      if ((Math.floor(x / size) + Math.floor(y / size)) % 2 === 0) {
+        ctx.fillRect(x, y, size, size);
       }
     }
-    ctx.restore();
+  }
+  ctx.restore();
 
-    if (id === 'background') {
-      const bg = state.background;
-      if (bg.type === 'image' && bg.src) {
-        const img = ensureImage(bg.src);
-        if (img && img.complete && img.naturalWidth) {
-          ctx.save();
-          drawCover(ctx, img, 0, 0, w, h, bg.fit);
-          ctx.restore();
-        } else {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-        }
+  if (id === 'background') {
+    const bg = state.background;
+    if (bg.type === 'image' && bg.src) {
+      const img = ensureImage(bg.src);
+      if (img && img.complete && img.naturalWidth) {
+        ctx.save();
+        drawCover(ctx, img, 0, 0, w, h, bg.fit);
+        ctx.restore();
       } else {
-        ctx.fillStyle = bg.color;
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
       }
-      return;
+    } else {
+      ctx.fillStyle = bg.color;
+      ctx.fillRect(0, 0, w, h);
     }
-
+  } else {
     const layer = getLayerById(id);
-    if (!layer) return;
-
-    if (layer.w > 0 && layer.h > 0) {
+    if (layer && layer.w > 0 && layer.h > 0) {
       ctx.save();
-      // Center of thumbnail
       ctx.translate(w / 2, h / 2);
-      // Scale to fit the layer's bounding box
       const scale = Math.min(w / layer.w, h / layer.h);
       ctx.scale(scale, scale);
-      // Apply rotation, opacity, etc.
       ctx.rotate(deg2rad(layer.rotation));
       ctx.globalAlpha = clamp(layer.opacity, 0, 1);
-      // Translate back so the layer's top-left draws relative to 0, 0
       ctx.translate(-layer.w / 2, -layer.h / 2);
-
       if (layer.type === 'image') {
         drawImageLayer(ctx, layer);
       } else if (layer.type === 'rect') {
@@ -170,6 +193,14 @@ export function updateThumbnails() {
       }
       ctx.restore();
     }
+  }
+
+  return _thumbCanvas.toDataURL('image/png');
+}
+
+export function updateThumbnails() {
+  document.querySelectorAll('.thumb-img').forEach((img) => {
+    img.src = renderThumbToDataURL(img.dataset.id);
   });
 }
 
