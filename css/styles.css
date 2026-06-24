@@ -411,6 +411,7 @@ input[type="color"]::-moz-color-swatch{border:none;border-radius:0;}
   background:none;border:none;color:inherit;font-family:inherit;
   padding:4px 0;
 }
+.lname-spacer{flex:1;}
 .layerrow .lname:focus{outline:none;border-bottom:1px solid var(--accent);}
 .layerrow .lbtns{
   display:flex;align-items:center;gap:1px;flex:none;
@@ -444,7 +445,6 @@ input[type="color"]::-moz-color-swatch{border:none;border-radius:0;}
   width:20px;height:28px;cursor:grab;touch-action:none;
   color:var(--text-faint);opacity:0.4;border-radius:4px;
   transition:opacity 0.15s,color 0.15s;
-  margin-left:auto;
 }
 .layerrow:hover .layer-drag-handle{opacity:0.7;}
 .layer-drag-handle:hover{color:var(--text);opacity:1!important;}

@@ -85,6 +85,7 @@ export function renderLayerList() {
         <div class="mini-typebadge">${typeBadgeIcon(l.type)}</div>
       </div>
       <input class="lname" value="${escapeAttr(l.name)}" data-id="${l.id}" />
+      <div class="lname-spacer"></div>
       <div class="lbtns">
         <button class="micro vis" data-id="${l.id}">${l.visible ? ICONS.eye : ICONS.eyeOff}</button>
         <button class="micro lock" data-id="${l.id}">${l.locked ? ICONS.lock : ICONS.unlock}</button>
