@@ -1,4 +1,4 @@
-import { ensureImage } from '../core/state.js';
+import { ensureImage, state } from '../core/state.js';
 import { pushHistory } from '../core/history.js';
 import { scheduleRender } from '../render/renderer.js';
 import { renderPropsPanel } from './props/panel.js';
@@ -132,10 +132,14 @@ function dispToNorm() {
   return { x: (_crop.x - _imgX) / _imgW, y: (_crop.y - _imgY) / _imgH, w: _crop.w / _imgW, h: _crop.h / _imgH };
 }
 
+function layerStillExists() {
+  return _layer && state.layers.some(l => l.id === _layer.id);
+}
+
 function apply() {
+  if (!layerStillExists()) { close(); return; }
   const norm = dispToNorm();
   _layer.crop = norm;
-  // Resize the layer to match the crop's aspect ratio, preserving width.
   const cropW = norm.w * _img.naturalWidth;
   const cropH = norm.h * _img.naturalHeight;
   _layer.h = Math.max(1, Math.round(_layer.w * (cropH / cropW)));
@@ -146,6 +150,7 @@ function apply() {
 }
 
 function reset() {
+  if (!layerStillExists()) { close(); return; }
   _layer.crop = { x: 0, y: 0, w: 1, h: 1 };
   _crop = normToDisp({ x: 0, y: 0, w: 1, h: 1 });
   draw();
@@ -153,6 +158,8 @@ function reset() {
 
 function close() {
   if (_modal) _modal.style.display = 'none';
+  _layer = null;
+  _img = null;
 }
 
 export function openCropModal(layer) {

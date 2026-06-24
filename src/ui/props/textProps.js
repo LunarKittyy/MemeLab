@@ -83,10 +83,15 @@ export function wireTextProps(layer) {
         const familyName = 'CustomFont_' + Date.now();
         const url = URL.createObjectURL(file);
         const face = new FontFace(familyName, `url(${url})`);
-        await face.load();
+        try {
+          await face.load();
+        } catch {
+          URL.revokeObjectURL(url);
+          alert('Could not load font file. Make sure it\'s a valid TTF, OTF, or WOFF.');
+          return;
+        }
         document.fonts.add(face);
         layer.font = familyName;
-        // Update dropdown label to show the file name without extension.
         const label = file.name.replace(/\.[^.]+$/, '');
         const sel = byId('tFont');
         if (sel) { sel.dataset.value = familyName; sel.querySelector('.csel-label').textContent = label; }

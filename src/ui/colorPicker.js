@@ -114,7 +114,7 @@ function updateHueThumb() {
 function emit(hex, fromHexInput) {
   if (_preview) _preview.style.background = hex;
   if (_hexInput && !fromHexInput) _hexInput.value = hex.replace('#', '');
-  if (_anchorEl) { _anchorEl.style.background = hex; _anchorEl.dataset.value = hex; }
+  if (_anchorEl && _anchorEl.isConnected) { _anchorEl.style.background = hex; _anchorEl.dataset.value = hex; }
   if (_onChange) _onChange(hex);
 }
 
