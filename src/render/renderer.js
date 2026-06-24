@@ -223,5 +223,5 @@ export async function exportPng(scale) {
   const ctx = off.getContext('2d');
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   renderScene(ctx, { forExport: true });
-  return new Promise((resolve) => off.toBlob((blob) => resolve(blob), 'image/png'));
+  return new Promise((resolve, reject) => off.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Export failed: canvas too large or out of memory')), 'image/png'));
 }

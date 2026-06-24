@@ -121,7 +121,8 @@ function showHint(msg) {
 async function exportPngAndDownload() {
   await fontsReady();
   const scale = +(document.getElementById('exportScale').dataset.value) || 1;
-  const blob = await renderExportPng(scale);
+  let blob;
+  try { blob = await renderExportPng(scale); } catch (err) { alert(err.message); return; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = 'meme.png';
