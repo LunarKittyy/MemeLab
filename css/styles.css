@@ -119,7 +119,6 @@ input,select,textarea{font-family:inherit;}
 }
 .panelbtn:hover{border-color:var(--accent);color:var(--accent-hover);}
 
-select.exportscale{display:none;}
 .export-split{position:relative;display:flex;border-radius:var(--radius-pill);box-shadow:0 2px 8px rgba(0,0,0,0.3);transition:box-shadow 0.2s ease,transform 0.2s ease;}
 .export-split:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.4);}
 .export-split:active{transform:translateY(0);}
@@ -573,7 +572,6 @@ input[type="range"]:active::-moz-range-thumb{
     bottom: 12px;
   }
   .export-scale-popup{top:auto !important;bottom:calc(100% + 4px) !important;}
-  .export-arrow svg{transform:rotate(180deg);}
 }
 @media (max-width: 360px){
   .brand span{display:none;}
