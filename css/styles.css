@@ -573,6 +573,7 @@ input[type="range"]:active::-moz-range-thumb{
     bottom: 12px;
   }
   .export-scale-popup{top:auto !important;bottom:calc(100% + 4px) !important;}
+  .export-arrow svg{transform:rotate(180deg);}
 }
 @media (max-width: 360px){
   .brand span{display:none;}
