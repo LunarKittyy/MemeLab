@@ -199,7 +199,9 @@ export function renderLayerList() {
   ul.querySelectorAll('.dup').forEach((b) => b.addEventListener('click', () => duplicateLayer(b.dataset.id)));
   ul.querySelectorAll('.merge').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) mergeLayerDown(b.dataset.id); }));
   ul.querySelectorAll('input.lname').forEach((inp) => {
+    inp.size = Math.max(3, inp.value.length);
     inp.addEventListener('click', (e) => e.stopPropagation());
+    inp.addEventListener('input', () => { inp.size = Math.max(3, inp.value.length); });
     inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
   });
   lastCreatedLayerId = null;
