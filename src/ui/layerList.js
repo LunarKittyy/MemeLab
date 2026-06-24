@@ -85,7 +85,6 @@ export function renderLayerList() {
         <div class="mini-typebadge">${typeBadgeIcon(l.type)}</div>
       </div>
       <input class="lname" value="${escapeAttr(l.name)}" data-id="${l.id}" />
-      <div class="lname-spacer"></div>
       <div class="lbtns">
         <button class="micro vis" data-id="${l.id}">${l.visible ? ICONS.eye : ICONS.eyeOff}</button>
         <button class="micro lock" data-id="${l.id}">${l.locked ? ICONS.lock : ICONS.unlock}</button>
@@ -102,7 +101,7 @@ export function renderLayerList() {
       </div>`;
     li.addEventListener('click', (e) => {
       if (_suppressNextClick) return;
-      if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
+      if (!e.target.closest('button') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
     });
 
     li.addEventListener('contextmenu', (e) => {
@@ -200,9 +199,6 @@ export function renderLayerList() {
   ul.querySelectorAll('.dup').forEach((b) => b.addEventListener('click', () => duplicateLayer(b.dataset.id)));
   ul.querySelectorAll('.merge').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) mergeLayerDown(b.dataset.id); }));
   ul.querySelectorAll('input.lname').forEach((inp) => {
-    inp.size = Math.max(3, inp.value.length);
-    inp.addEventListener('click', (e) => e.stopPropagation());
-    inp.addEventListener('input', () => { inp.size = Math.max(3, inp.value.length); });
     inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
   });
   lastCreatedLayerId = null;
