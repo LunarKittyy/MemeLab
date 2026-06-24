@@ -4,6 +4,7 @@ import { scheduleRender, renderLayersToCtx, updateThumbnails } from '../render/r
 import { selectLayer } from '../interactions/pointer.js';
 import { ICONS } from './icons.js';
 import { renderPropsPanel } from './props/panel.js';
+import { showContextMenu } from './contextMenu.js';
 
 export let lastCreatedLayerId = null;
 export function setLastCreatedLayerId(id) {
@@ -101,6 +102,21 @@ export function renderLayerList() {
     li.addEventListener('click', (e) => {
       if (_suppressNextClick) return;
       if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
+    });
+
+    li.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      selectLayer(l.id);
+      const idx = state.layers.findIndex(x => x.id === l.id);
+      showContextMenu(e.clientX, e.clientY, [
+        { action: 'vis',   label: l.visible ? 'Hide layer' : 'Show layer', onClick: () => { l.visible = !l.visible; pushHistory('Toggle visibility'); renderLayerList(); scheduleRender(); } },
+        { action: 'lock',  label: l.locked ? 'Unlock layer' : 'Lock layer', onClick: () => { l.locked = !l.locked; pushHistory('Toggle lock'); renderLayerList(); scheduleRender(); } },
+        'sep',
+        { action: 'dup',   label: 'Duplicate', onClick: () => duplicateLayer(l.id) },
+        ...(idx > 0 ? [{ action: 'merge', label: 'Merge down', onClick: () => mergeLayerDown(l.id) }] : []),
+        'sep',
+        { action: 'del',   label: 'Delete', danger: true, onClick: () => deleteLayer(l.id) },
+      ]);
     });
 
     li.addEventListener('pointerdown', (e) => {
