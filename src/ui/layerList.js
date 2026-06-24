@@ -170,7 +170,7 @@ export function renderLayerList() {
       <img class="thumb-img" data-id="background" width="60" height="60" alt="" draggable="false" />
       <div class="mini-typebadge">${ICONS.image}</div>
     </div>
-    <div class="lname" style="padding:5px 0;">Background</div>`;
+    <div class="lname" style="padding:5px 0;flex:1;">Background</div>`;
   bg.addEventListener('click', () => selectLayer('background'));
   ul.appendChild(bg);
 
