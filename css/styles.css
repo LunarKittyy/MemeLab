@@ -377,13 +377,10 @@ input[type="color"]::-moz-color-swatch{border:none;border-radius:0;}
   overflow:hidden;
   transition:width 0.18s ease, opacity 0.18s ease, margin 0.18s ease;
 }
-@media (hover: hover) {
-  .layerrow:hover .layer-preview,
-  .layerrow:focus-within .layer-preview {
-    width:0;
-    opacity:0;
-    margin-right:-10px;
-  }
+.layerrow.selected .layer-preview {
+  width:0;
+  opacity:0;
+  margin-right:-10px;
 }
 .layerrow .layer-preview canvas,
 .layerrow .layer-preview .thumb-img{
