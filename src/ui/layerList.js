@@ -154,14 +154,16 @@ export function renderLayerList() {
     }
     dragState = null;
   };
-  ul.onpointercancel = () => {
+  function cancelDragState() {
     if (dragState) {
       clearDragIndicators(ul);
       document.querySelectorAll('.dragging-source').forEach(el => el.classList.remove('dragging-source'));
       dragState = null;
     }
-    renderLayerList(); // restore state
-  };
+    renderLayerList();
+  }
+  ul.onpointercancel = cancelDragState;
+  ul.oncontextmenu = (e) => { if (dragState) { e.preventDefault(); cancelDragState(); } };
 
   const bg = document.createElement('li');
   bg.className = 'layerrow bgrow' + (state.selectedId === 'background' ? ' selected' : '');
@@ -179,7 +181,7 @@ export function renderLayerList() {
   ul.querySelectorAll('.del').forEach((b) => b.addEventListener('click', () => deleteLayer(b.dataset.id)));
   ul.querySelectorAll('.dup').forEach((b) => b.addEventListener('click', () => duplicateLayer(b.dataset.id)));
   ul.querySelectorAll('.merge').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) mergeLayerDown(b.dataset.id); }));
-  ul.querySelectorAll('.lname').forEach((inp) => {
+  ul.querySelectorAll('input.lname').forEach((inp) => {
     inp.addEventListener('click', (e) => e.stopPropagation());
     inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
   });
