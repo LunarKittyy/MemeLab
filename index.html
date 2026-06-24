@@ -15,13 +15,6 @@
 
   <aside class="panel panel-left" id="panelLeft">
     <div class="panel-scroll">
-      <div class="add-row">
-        <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
-        <button class="addbtn" id="btnAddImage"><span class="icon" id="iconAddImage"></span>Image</button>
-        <button class="addbtn" id="btnAddRect"><span class="icon" id="iconAddRect"></span>Shape</button>
-        <input type="file" id="fileInput" accept="image/*">
-      </div>
-
       <div class="section">
         <div class="section-title">Canvas</div>
         <div class="row">
@@ -42,15 +35,17 @@
           <div class="numfield"><span>W</span><input class="fullinput" type="number" id="customW" min="50" max="4000"></div>
           <div class="numfield"><span>H</span><input class="fullinput" type="number" id="customH" min="50" max="4000"></div>
         </div>
-      </div>
-
-
-      <div class="section">
-        <button class="smallbtn full" id="btnReset">Reset canvas</button>
+        <button class="smallbtn full" id="btnReset" style="margin-top:10px;">Reset canvas</button>
       </div>
 
       <div class="section">
         <div class="section-title">Layers</div>
+        <div class="add-row">
+          <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
+          <button class="addbtn" id="btnAddImage"><span class="icon" id="iconAddImage"></span>Image</button>
+          <button class="addbtn" id="btnAddRect"><span class="icon" id="iconAddRect"></span>Shape</button>
+          <input type="file" id="fileInput" accept="image/*">
+        </div>
       </div>
       <ul class="layerlist" id="layerList"></ul>
     </div>
