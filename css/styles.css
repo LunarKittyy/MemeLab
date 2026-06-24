@@ -127,7 +127,7 @@ select.exportscale{display:none;}
 .export-split .primarybtn:hover{transform:none;box-shadow:none;}
 .export-split .export-main{border-radius:var(--radius-pill) 0 0 var(--radius-pill);padding-right:10px;}
 .export-split .export-arrow{border-radius:0 var(--radius-pill) var(--radius-pill) 0;padding:0 10px;border-left:1px solid rgba(0,0,0,0.15);}
-.export-scale-popup{display:none;right:0;left:auto;min-width:80px;}
+.export-scale-popup{display:none;right:0;left:auto;min-width:80px;top:auto;bottom:calc(100% + 4px);}
 
 .primarybtn{
   height:34px;padding:0 16px;border-radius:var(--radius-pill);border:none;
