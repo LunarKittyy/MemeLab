@@ -120,9 +120,13 @@ input,select,textarea{font-family:inherit;}
 .panelbtn:hover{border-color:var(--accent);color:var(--accent-hover);}
 
 select.exportscale{display:none;}
-.export-split{position:relative;display:flex;}
+.export-split{position:relative;display:flex;border-radius:var(--radius-pill);box-shadow:0 2px 8px rgba(0,0,0,0.3);transition:box-shadow 0.2s ease,transform 0.2s ease;}
+.export-split:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,0.4);}
+.export-split:active{transform:translateY(0);}
+.export-split .primarybtn{box-shadow:none;transform:none !important;}
+.export-split .primarybtn:hover{transform:none;box-shadow:none;}
 .export-split .export-main{border-radius:var(--radius-pill) 0 0 var(--radius-pill);padding-right:10px;}
-.export-split .export-arrow{border-radius:0 var(--radius-pill) var(--radius-pill) 0;padding:0 10px;border-left:1px solid rgba(255,255,255,0.15);}
+.export-split .export-arrow{border-radius:0 var(--radius-pill) var(--radius-pill) 0;padding:0 10px;border-left:1px solid rgba(0,0,0,0.15);}
 .export-scale-popup{display:none;right:0;left:auto;min-width:80px;}
 
 .primarybtn{
