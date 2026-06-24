@@ -2,13 +2,13 @@ import { bindStage, resizeStageBuffer, scheduleRender } from './render/renderer.
 import { fontsReady } from './render/fonts.js';
 import { pushHistory, onHistoryCommit, onRestore, canUndo, canRedo } from './core/history.js';
 import { stageEventsInit, onSelectionChange } from './interactions/pointer.js';
-import { renderLayerList } from './ui/layerList.js';
+import { renderLayerList, updateLayerListSelection } from './ui/layerList.js';
 import { renderPropsPanel } from './ui/props/panel.js';
 import { initIcons, wireGlobalUI, syncSizeInputs, updateHistoryButtons, updateSaveStatusUI } from './ui/toolbar.js';
 import { scheduleAutosave, tryLoadAutosave, onSaveStatusChange } from './persistence/autosave.js';
 
 onSelectionChange(() => {
-  renderLayerList();
+  updateLayerListSelection();
   renderPropsPanel();
   scheduleRender();
 });

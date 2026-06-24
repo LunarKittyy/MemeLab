@@ -61,6 +61,15 @@ function commitDrag(ul, clientY) {
   scheduleRender();
 }
 
+export function updateLayerListSelection() {
+  const ul = document.getElementById('layerList');
+  ul.querySelectorAll('.layerrow[data-id]').forEach(li => {
+    li.classList.toggle('selected', li.dataset.id === state.selectedId);
+  });
+  const bg = ul.querySelector('.bgrow');
+  if (bg) bg.classList.toggle('selected', state.selectedId === 'background');
+}
+
 export function renderLayerList() {
   const ul = document.getElementById('layerList');
   ul.innerHTML = '';
