@@ -197,7 +197,26 @@ export function wireGlobalUI() {
 
 
   wireCustomSelect('sizePreset', (v) => applySizePreset(v));
-  wireCustomSelect('exportScale', () => {});
+  const exportSplit = document.getElementById('exportScale');
+  const exportArrow = exportSplit.querySelector('.export-arrow');
+  const exportPopup = exportSplit.querySelector('.export-scale-popup');
+  let exportOpen = false;
+  function closeExportPopup() { exportOpen = false; exportPopup.style.display = 'none'; }
+  exportArrow.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportOpen = !exportOpen;
+    exportPopup.style.display = exportOpen ? 'block' : 'none';
+  });
+  exportPopup.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opt = e.target.closest('.csel-opt');
+    if (!opt) return;
+    exportSplit.dataset.value = opt.dataset.value;
+    exportSplit.querySelector('.export-scale-label').textContent = opt.dataset.value + 'x';
+    exportPopup.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o === opt));
+    closeExportPopup();
+  });
+  document.addEventListener('click', closeExportPopup);
   document.getElementById('customW').addEventListener('change', (e) => { state.width = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
   document.getElementById('customH').addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
 

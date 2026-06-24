@@ -119,15 +119,11 @@ input,select,textarea{font-family:inherit;}
 }
 .panelbtn:hover{border-color:var(--accent);color:var(--accent-hover);}
 
-select.exportscale{
-  height:34px;border-radius:var(--radius-pill);border:1px solid var(--border);
-  background:var(--panel-alt);color:var(--text);font-size:12px;padding:0 12px;
-  outline:none;
-  transition:all 0.2s ease;
-}
-select.exportscale:hover{
-  border-color:var(--text-faint);
-}
+select.exportscale{display:none;}
+.export-split{position:relative;display:flex;}
+.export-split .export-main{border-radius:var(--radius-pill) 0 0 var(--radius-pill);padding-right:10px;}
+.export-split .export-arrow{border-radius:0 var(--radius-pill) var(--radius-pill) 0;padding:0 10px;border-left:1px solid rgba(255,255,255,0.15);}
+.export-scale-popup{display:none;right:0;left:auto;min-width:80px;}
 
 .primarybtn{
   height:34px;padding:0 16px;border-radius:var(--radius-pill);border:none;
@@ -566,7 +562,6 @@ input[type="range"]:active::-moz-range-thumb{
   .topbar{padding:0 8px;gap:4px;}
   .brand{font-size:14px;}
   .panelbtn{padding:0 8px;font-size:10.5px;}
-  select.exportscale{display:none;}
   .primarybtn{padding:0 10px;font-size:11px;}
   .floating-controls {
     padding: 6px 10px;
