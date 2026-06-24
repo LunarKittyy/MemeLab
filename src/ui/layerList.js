@@ -106,7 +106,7 @@ export function renderLayerList() {
 
     li.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      selectLayer(l.id);
+      e.stopPropagation();
       const idx = state.layers.findIndex(x => x.id === l.id);
       showContextMenu(e.clientX, e.clientY, [
         { action: 'vis',   label: l.visible ? 'Hide layer' : 'Show layer', onClick: () => { l.visible = !l.visible; pushHistory('Toggle visibility'); renderLayerList(); scheduleRender(); } },
@@ -120,6 +120,7 @@ export function renderLayerList() {
     });
 
     li.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
       if (e.target.closest('button') || e.target.closest('input')) return;
       const startX = e.clientX, startY = e.clientY;
       const fromHandle = !!e.target.closest('.layer-drag-handle');

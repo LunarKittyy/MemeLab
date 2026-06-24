@@ -5,7 +5,6 @@ function build() {
   el.className = 'ctx-menu';
   document.body.appendChild(el);
   document.addEventListener('click', close);
-  document.addEventListener('contextmenu', close);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   return el;
 }
