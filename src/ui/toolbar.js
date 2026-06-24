@@ -26,6 +26,7 @@ export function addTextLayerAction() {
   const l = defaultTextLayer();
   state.layers.push(l);
   setLastCreatedLayerId(l.id);
+  renderLayerList();
   selectLayer(l.id);
   pushHistory('Add text layer');
   openPanelMobile('right', true);
@@ -36,6 +37,7 @@ export function addRectLayerAction() {
   const l = defaultRectLayer();
   state.layers.push(l);
   setLastCreatedLayerId(l.id);
+  renderLayerList();
   selectLayer(l.id);
   pushHistory('Add shape layer');
 }
@@ -61,6 +63,7 @@ function handleImageFile(file, target) {
         ensureImage(src);
         state.layers.push(l);
         setLastCreatedLayerId(l.id);
+        renderLayerList();
         selectLayer(l.id);
         openPanelMobile('right', true);
       }

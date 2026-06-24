@@ -232,6 +232,7 @@ export function duplicateLayer(id) {
   const idx = state.layers.findIndex((x) => x.id === id);
   state.layers.splice(idx + 1, 0, copy);
   lastCreatedLayerId = copy.id;
+  renderLayerList();
   selectLayer(copy.id);
   pushHistory('Duplicate layer');
 }
@@ -261,6 +262,7 @@ export function mergeLayerDown(id) {
 
   state.layers.splice(idx - 1, 2, mergedLayer);
   lastCreatedLayerId = mergedLayer.id;
+  renderLayerList();
   selectLayer(mergedLayer.id);
   pushHistory('Merge layer down');
 }
