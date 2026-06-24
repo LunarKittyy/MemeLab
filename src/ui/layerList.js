@@ -1,4 +1,4 @@
-import { state, getLayerById, nextId } from '../core/state.js';
+import { state, getLayerById, nextId, pruneImageCache } from '../core/state.js';
 import { pushHistory } from '../core/history.js';
 import { scheduleRender, renderLayersToCtx, updateThumbnails } from '../render/renderer.js';
 import { selectLayer } from '../interactions/pointer.js';
@@ -219,6 +219,7 @@ export function deleteLayer(id) {
   if (idx === -1) return;
   state.layers.splice(idx, 1);
   if (state.selectedId === id) state.selectedId = null;
+  pruneImageCache();
   pushHistory('Delete layer'); renderLayerList(); renderPropsPanel(); scheduleRender();
 }
 

@@ -30,7 +30,13 @@ export function getLayerById(id) {
   return state.layers.find((l) => l.id === id);
 }
 
-// Dynamic import avoids a static circular dependency with renderer.js.
+export function pruneImageCache() {
+  const used = new Set();
+  if (state.background.src) used.add(state.background.src);
+  for (const l of state.layers) if (l.src) used.add(l.src);
+  for (const key of imageCache.keys()) if (!used.has(key)) imageCache.delete(key);
+}
+
 export function ensureImage(src) {
   if (!src) return null;
   if (imageCache.has(src)) return imageCache.get(src);
