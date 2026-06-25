@@ -1,23 +1,30 @@
 import { ensureImage } from '../core/state.js';
 import { drawRoundedRect } from './text.js';
 import { applyBoxEffect } from './boxEffects.js';
+import { getAdjustedCanvas } from './adjustCache.js';
 
 export { drawRoundedRect };
 
-function _drawImageContent(ctx, img, layer) {
+// Draws the image (with crop/flip) at (0,0,layer.w,layer.h) in ctx.
+// If adjCanvas is provided, draws it scaled instead of the raw src.
+function _drawImageContent(ctx, img, layer, adjCanvas) {
+  const w = layer.w, h = layer.h;
+  if (adjCanvas) {
+    // adjCanvas is already at natural cropped resolution; just scale it down
+    ctx.drawImage(adjCanvas, 0, 0, w, h);
+    return;
+  }
   ctx.save();
   if (layer.flipX || layer.flipY) {
-    ctx.translate(layer.w / 2, layer.h / 2);
+    ctx.translate(w / 2, h / 2);
     ctx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1);
-    ctx.translate(-layer.w / 2, -layer.h / 2);
+    ctx.translate(-w / 2, -h / 2);
   }
-  if (layer.exposure !== 0) ctx.filter = `brightness(${100 + layer.exposure}%)`;
   const crop = layer.crop || { x: 0, y: 0, w: 1, h: 1 };
   ctx.drawImage(img,
     crop.x * img.naturalWidth, crop.y * img.naturalHeight,
     crop.w * img.naturalWidth, crop.h * img.naturalHeight,
-    0, 0, layer.w, layer.h);
-  ctx.filter = 'none';
+    0, 0, w, h);
   ctx.restore();
 }
 
@@ -25,14 +32,16 @@ export function drawImageLayer(ctx, layer) {
   const img = ensureImage(layer.src);
   if (!img || !img.complete || !img.naturalWidth) return;
 
+  const adjCanvas = getAdjustedCanvas(layer);
   const mask = layer.mask;
+
   if (mask?.enabled && mask.src) {
     const maskImg = ensureImage(mask.src);
     const w = Math.ceil(layer.w), h = Math.ceil(layer.h);
     const off = document.createElement('canvas');
     off.width = w; off.height = h;
     const offCtx = off.getContext('2d');
-    _drawImageContent(offCtx, img, layer);
+    _drawImageContent(offCtx, img, layer, adjCanvas);
     if (maskImg && maskImg.complete && maskImg.naturalWidth) {
       if (mask.invert) {
         const inv = document.createElement('canvas');
@@ -53,7 +62,7 @@ export function drawImageLayer(ctx, layer) {
     return;
   }
 
-  _drawImageContent(ctx, img, layer);
+  _drawImageContent(ctx, img, layer, adjCanvas);
 }
 
 export function drawRectLayer(ctx, layer, backdrop) {

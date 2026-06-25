@@ -1,12 +1,26 @@
 import { getLayerById, ensureImage } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
+import { clearAdjustCache } from '../../render/adjustCache.js';
 import { byId, rangeRow, transformHtml, actionsHtml, wireActions, collapsibleHtml, wireCollapsible } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
+
+function _adjVal(layer, type) {
+  const a = (layer.adjustments || []).find(x => x.type === type);
+  return a ? a.value : 0;
+}
+
+function _adjustmentsHtml(layer) {
+  const inner = `
+    ${rangeRow('Brightness', 'aiBright', -100, 100, 1, _adjVal(layer, 'brightness'))}
+    ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
+    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
+  return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
+}
 
 export function imagePropsHtml(layer) {
   const mask = layer.mask || { enabled: false, src: null, invert: false, feather: 0 };
@@ -36,7 +50,6 @@ export function imagePropsHtml(layer) {
       <div class="togglerow" style="margin-top:8px;"><span style="font-size:11.5px;color:var(--text-dim);">Lock aspect ratio</span>
         <label class="switch"><input type="checkbox" id="iAspect" ${layer.aspectLocked ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
-      ${rangeRow('Exposure', 'iExposure', -100, 100, 1, layer.exposure ?? 0)}
       ${collapsibleHtml('iMaskSection', 'Mask', maskInner, { defaultOpen: mask.enabled })}
     </div>
     <div class="section" id="aiSection">
@@ -53,6 +66,7 @@ export function imagePropsHtml(layer) {
       </div>
       <div id="aiError" class="ai-error" style="display:none;"></div>
     </div>
+    ${_adjustmentsHtml(layer)}
     ${transformHtml(layer)}
     ${actionsHtml()}`;
 }
@@ -63,12 +77,24 @@ export function wireImageProps(layer) {
   byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
-  byId('iExposure').addEventListener('input', (e) => {
-    layer.exposure = Number(e.target.value);
-    byId('iExposureval').textContent = layer.exposure;
-    scheduleRender();
-  });
-  byId('iExposure').addEventListener('change', () => pushHistory());
+
+  // ---- Adjustments ----
+  if (!layer.adjustments) layer.adjustments = [];
+  function wireAdj(id, type) {
+    byId(id).addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      byId(id + 'val').textContent = v;
+      let adj = layer.adjustments.find(a => a.type === type);
+      if (adj) { adj.value = v; } else { layer.adjustments.push({ type, value: v }); }
+      clearAdjustCache();
+      scheduleRender();
+    });
+    byId(id).addEventListener('change', () => pushHistory());
+  }
+  wireAdj('aiBright', 'brightness');
+  wireAdj('aiContr',  'contrast');
+  wireAdj('aiSat',    'saturation');
+  wireCollapsible('adjSection');
 
   // ---- Mask controls ----
   if (!layer.mask) layer.mask = { enabled: false, src: null, invert: false, feather: 0 };

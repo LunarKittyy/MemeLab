@@ -411,6 +411,108 @@ def run():
         check("zoom: no errors throughout", len(errors_zoom) == 0, str(errors_zoom))
         ctx_zoom.close()
 
+        # ---- Section 4: non-destructive adjustment stack ----
+        ctx_adj = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_adj = ctx_adj.new_page()
+        errors_adj = []
+        page_adj.on("pageerror", lambda exc: errors_adj.append(str(exc)))
+        page_adj.goto(TEST_URL)
+        page_adj.wait_for_timeout(500)
+
+        # Add an image layer; verify schema fields exist from the factory.
+        with page_adj.expect_file_chooser() as fc_adj:
+            page_adj.click("#iconAddImage")
+        fc_adj.value.set_files(SAMPLE_IMG)
+        page_adj.wait_for_timeout(500)
+        st_adj = page_adj.evaluate("window.__test.getState()")
+        adj_img = next(l for l in st_adj["layers"] if l["type"] == "image")
+        check("adj: image layer has adjustments array",
+              isinstance(adj_img.get("adjustments"), list))
+        check("adj: adjustments array starts empty",
+              len(adj_img.get("adjustments", [])) == 0)
+        check("adj: image layer has mask field", "mask" in adj_img)
+        check("adj: mask starts disabled", not adj_img["mask"]["enabled"])
+        adj_img_id = adj_img["id"]
+
+        # Select the image layer so the props panel renders.
+        page_adj.evaluate("(id) => window.__test.selectLayer(id)", adj_img_id)
+        page_adj.wait_for_timeout(200)
+
+        # Open the Adjustments collapsible (click its header).
+        page_adj.evaluate("""() => {
+            const hdr = document.querySelector('#adjSection-hdr');
+            if (hdr) hdr.click();
+        }""")
+        page_adj.wait_for_timeout(100)
+
+        # Export baseline with no adjustments.
+        page_adj.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_adj.wait_for_timeout(50)
+        with page_adj.expect_download() as dl_base:
+            page_adj.click("#btnExport")
+        base_path = os.path.join(OUT_DIR, "adj_base.png")
+        dl_base.value.save_as(base_path)
+        img_base = Image.open(base_path)
+        check("adj: baseline export is valid PNG", img_base.size[0] > 0)
+
+        # Move the brightness slider to +80.
+        page_adj.evaluate("""() => {
+            const sl = document.getElementById('aiBright');
+            if (!sl) return;
+            sl.value = '80';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            sl.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page_adj.wait_for_timeout(200)
+
+        # Verify layer.adjustments array was updated in state.
+        st_adj2 = page_adj.evaluate("window.__test.getState()")
+        adj_img2 = next(l for l in st_adj2["layers"] if l["id"] == adj_img_id)
+        bright_entry = next((a for a in adj_img2.get("adjustments", []) if a["type"] == "brightness"), None)
+        check("adj: brightness slider writes to layer.adjustments",
+              bright_entry is not None and bright_entry["value"] == 80,
+              str(adj_img2.get("adjustments")))
+
+        # Export with brightness applied — result must differ visually.
+        with page_adj.expect_download() as dl_bright:
+            page_adj.click("#btnExport")
+        bright_path = os.path.join(OUT_DIR, "adj_bright.png")
+        dl_bright.value.save_as(bright_path)
+        img_bright = Image.open(bright_path)
+        check("adj: bright export is valid PNG of same size", img_bright.size == img_base.size)
+
+        import hashlib
+        def adj_hash(path):
+            return hashlib.md5(open(path, 'rb').read()).hexdigest()
+
+        check("adj: bright export is visually distinct from baseline",
+              adj_hash(bright_path) != adj_hash(base_path))
+
+        # Average pixel brightness should have increased significantly.
+        import struct
+        px_base = list(img_base.convert("L").getdata())
+        px_bright = list(img_bright.convert("L").getdata())
+        avg_base = sum(px_base) / len(px_base)
+        avg_bright = sum(px_bright) / len(px_bright)
+        check("adj: brightness adjustment visibly brightens the export",
+              avg_bright > avg_base + 10,
+              f"base avg={avg_base:.1f} bright avg={avg_bright:.1f}")
+
+        # Undo should revert the brightness in state.
+        page_adj.click("#btnUndo")
+        page_adj.wait_for_timeout(150)
+        st_adj3 = page_adj.evaluate("window.__test.getState()")
+        adj_img3 = next(l for l in st_adj3["layers"] if l["id"] == adj_img_id)
+        bright_after_undo = next(
+            (a for a in adj_img3.get("adjustments", []) if a["type"] == "brightness"), None)
+        check("adj: undo reverts brightness adjustment",
+              bright_after_undo is None or bright_after_undo["value"] == 0,
+              str(adj_img3.get("adjustments")))
+
+        # No errors throughout.
+        check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
+        ctx_adj.close()
+
         browser.close()
 
 
