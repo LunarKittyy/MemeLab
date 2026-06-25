@@ -65,6 +65,7 @@ function applyLoadedSnapshot(snap) {
       l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
     }
     if (l.blendMode === undefined) l.blendMode = 'normal';
+    if (l.type === 'image' && l.mask === undefined) l.mask = { enabled: false, src: null, invert: false, feather: 0 };
   });
   state.selectedId = null;
   reconcileIdsAndCounters();
