@@ -886,3 +886,20 @@ select option {
 .ctx-item:hover{background:rgba(255,255,255,0.08);}
 .ctx-danger{color:var(--danger);}
 .ctx-sep{height:1px;background:rgba(255,255,255,0.08);margin:4px 0;}
+
+/* ---- Collapsible sections ---- */
+.collapsible{border-top:1px solid var(--border-soft);margin-top:4px;}
+.collapsible-hdr{width:100%;background:none;border:none;color:var(--text-dim);font-size:11px;font-family:var(--font-ui);
+  display:flex;align-items:center;justify-content:space-between;padding:6px 0;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;}
+.collapsible-hdr:hover{color:var(--text);}
+.collapsible-chevron{font-size:10px;transition:transform .15s;}
+.collapsible-hdr[aria-expanded="true"] .collapsible-chevron{transform:rotate(180deg);}
+.collapsible-body{padding-bottom:4px;}
+
+/* ---- Zoom indicator ---- */
+.zoom-indicator{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.5);border-radius:var(--radius-pill);
+  padding:3px 8px;pointer-events:auto;z-index:10;}
+.zoom-indicator span{font-size:11px;color:var(--text-dim);min-width:36px;text-align:center;}
+.zoom-reset-btn{background:none;border:none;color:var(--text-dim);font-size:10px;cursor:pointer;padding:0 2px;}
+.zoom-reset-btn:hover{color:var(--text);}

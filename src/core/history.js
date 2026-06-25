@@ -1,4 +1,5 @@
 import { state, ensureImage } from './state.js';
+import { clearAdjustCache } from '../render/adjustCache.js';
 
 let history = [];
 let historyIndex = -1;
@@ -50,8 +51,14 @@ export function restoreSnapshot(snap) {
   state.background = clone.background;
   state.layers = clone.layers;
   state.selectedId = clone.selectedId;
+  clearAdjustCache();
   if (state.background.src) ensureImage(state.background.src);
-  state.layers.forEach((l) => { if (l.type === 'image') ensureImage(l.src); });
+  state.layers.forEach((l) => {
+    if (l.type === 'image') {
+      if (l.src) ensureImage(l.src);
+      if (l.mask?.src) ensureImage(l.mask.src);
+    }
+  });
 }
 
 const restoreListeners = [];

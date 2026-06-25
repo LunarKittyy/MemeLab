@@ -2,10 +2,27 @@ import { state, getSelected, ensureImage, getLayerById } from '../core/state.js'
 import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
+import { viewport, resetViewport } from '../core/viewport.js';
 
 export let stage = null;
 let stageCtx = null;
 let dpr = 1;
+let _fitScale = 1;
+
+export function getViewportFitScale() { return _fitScale; }
+
+export function applyViewportToStage() {
+  const z = viewport.zoom;
+  const w = Math.round(state.width * _fitScale * z);
+  const h = Math.round(state.height * _fitScale * z);
+  stage.style.width = w + 'px';
+  stage.style.height = h + 'px';
+  stage.style.transform = `translate(${viewport.panX}px,${viewport.panY}px)`;
+  const pct = byZoomId('zoomPct');
+  if (pct) pct.textContent = Math.round(z * 100) + '%';
+}
+
+function byZoomId(id) { return document.getElementById(id); }
 
 export function bindStage(canvasEl) {
   stage = canvasEl;
@@ -21,6 +38,7 @@ export function dispScaleFactor() {
 function drawLayer(ctx, layer, backdrop) {
   if (!layer.visible) return;
   ctx.save();
+  ctx.globalCompositeOperation = layer.blendMode || 'normal';
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
   ctx.translate(cx, cy);
   ctx.rotate(deg2rad(layer.rotation));
@@ -210,9 +228,8 @@ export function resizeStageBuffer() {
   const maxW = Math.max(60, area.clientWidth - 48);
   const maxH = Math.max(60, area.clientHeight - 48);
   const scale = Math.min(maxW / state.width, maxH / state.height, 1);
-  const finalScale = scale > 0 ? scale : 1;
-  stage.style.width = Math.round(state.width * finalScale) + 'px';
-  stage.style.height = Math.round(state.height * finalScale) + 'px';
+  _fitScale = scale > 0 ? scale : 1;
+  applyViewportToStage();
   scheduleRender();
 }
 

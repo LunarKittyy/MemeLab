@@ -64,11 +64,26 @@ function applyLoadedSnapshot(snap) {
     if (l.type === 'text' && l.sizeScale === undefined && l.size && l.h) {
       l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
     }
+    if (l.blendMode === undefined) l.blendMode = 'normal';
+    if (l.type === 'image' && l.mask === undefined) l.mask = { enabled: false, src: null, invert: false, feather: 0 };
+    if (l.adjustments === undefined) l.adjustments = [];
+    // Migrate legacy exposure field → brightness adjustment
+    if (l.type === 'image' && l.exposure !== undefined && l.exposure !== 0) {
+      if (!l.adjustments.some(a => a.type === 'brightness')) {
+        l.adjustments.push({ type: 'brightness', value: l.exposure });
+      }
+    }
+    if (l.type === 'image') delete l.exposure;
   });
   state.selectedId = null;
   reconcileIdsAndCounters();
   if (state.background.src) ensureImage(state.background.src);
-  state.layers.forEach((l) => { if (l.type === 'image' && l.src) ensureImage(l.src); });
+  state.layers.forEach((l) => {
+    if (l.type === 'image') {
+      if (l.src) ensureImage(l.src);
+      if (l.mask?.src) ensureImage(l.mask.src);
+    }
+  });
 }
 
 export async function tryLoadAutosave() {

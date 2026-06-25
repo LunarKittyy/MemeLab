@@ -1,17 +1,40 @@
-import { state, getLayerById, ensureImage } from '../../core/state.js';
+import { getLayerById, ensureImage } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
-import { byId, rangeRow, transformHtml, actionsHtml, wireActions } from './shared.js';
+import { clearAdjustCache } from '../../render/adjustCache.js';
+import { byId, rangeRow, transformHtml, actionsHtml, wireActions, collapsibleHtml, wireCollapsible } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
-import { renderLayerList, setLastCreatedLayerId } from '../layerList.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
-import { splitLayerByMask } from '../../cutout/split.js';
-import { selectLayer } from '../../interactions/pointer.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
 
+function _adjVal(layer, type) {
+  const a = (layer.adjustments || []).find(x => x.type === type);
+  return a ? a.value : 0;
+}
+
+function _adjustmentsHtml(layer) {
+  const inner = `
+    ${rangeRow('Brightness', 'aiBright', -100, 100, 1, _adjVal(layer, 'brightness'))}
+    ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
+    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
+  return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
+}
+
 export function imagePropsHtml(layer) {
+  const mask = layer.mask || { enabled: false, src: null, invert: false, feather: 0 };
+  const maskInner = `
+    <div class="togglerow"><span style="font-size:11.5px;color:var(--text-dim);">Enable mask</span>
+      <label class="switch"><input type="checkbox" id="iMaskEnabled" ${mask.enabled ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div id="iMaskControls" style="display:${mask.enabled ? 'block' : 'none'}">
+      <div class="togglerow" style="margin-top:6px;"><span style="font-size:11.5px;color:var(--text-dim);">Invert mask</span>
+        <label class="switch"><input type="checkbox" id="iMaskInvert" ${mask.invert ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
+      </div>
+      ${rangeRow('Feather', 'iMaskFeather', 0, 50, 1, mask.feather ?? 0)}
+      <div class="row" style="margin-top:6px;"><button class="smallbtn full danger" id="iMaskClear">Clear mask</button></div>
+    </div>`;
   return `
     <div class="section">
       <div class="section-title">Image</div>
@@ -27,7 +50,7 @@ export function imagePropsHtml(layer) {
       <div class="togglerow" style="margin-top:8px;"><span style="font-size:11.5px;color:var(--text-dim);">Lock aspect ratio</span>
         <label class="switch"><input type="checkbox" id="iAspect" ${layer.aspectLocked ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
-      ${rangeRow('Exposure', 'iExposure', -100, 100, 1, layer.exposure ?? 0)}
+      ${collapsibleHtml('iMaskSection', 'Mask', maskInner, { defaultOpen: mask.enabled })}
     </div>
     <div class="section" id="aiSection">
       <div class="section-title">AI Tools</div>
@@ -43,6 +66,7 @@ export function imagePropsHtml(layer) {
       </div>
       <div id="aiError" class="ai-error" style="display:none;"></div>
     </div>
+    ${_adjustmentsHtml(layer)}
     ${transformHtml(layer)}
     ${actionsHtml()}`;
 }
@@ -53,12 +77,46 @@ export function wireImageProps(layer) {
   byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
-  byId('iExposure').addEventListener('input', (e) => {
-    layer.exposure = Number(e.target.value);
-    byId('iExposureval').textContent = layer.exposure;
+
+  // ---- Adjustments ----
+  if (!layer.adjustments) layer.adjustments = [];
+  function wireAdj(id, type) {
+    byId(id).addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      byId(id + 'val').textContent = v;
+      let adj = layer.adjustments.find(a => a.type === type);
+      if (adj) { adj.value = v; } else { layer.adjustments.push({ type, value: v }); }
+      clearAdjustCache();
+      scheduleRender();
+    });
+    byId(id).addEventListener('change', () => pushHistory());
+  }
+  wireAdj('aiBright', 'brightness');
+  wireAdj('aiContr',  'contrast');
+  wireAdj('aiSat',    'saturation');
+  wireCollapsible('adjSection');
+
+  // ---- Mask controls ----
+  if (!layer.mask) layer.mask = { enabled: false, src: null, invert: false, feather: 0 };
+  wireCollapsible('iMaskSection');
+  byId('iMaskEnabled').addEventListener('change', (e) => {
+    layer.mask.enabled = e.target.checked;
+    byId('iMaskControls').style.display = e.target.checked ? 'block' : 'none';
+    scheduleRender(); pushHistory();
+  });
+  byId('iMaskInvert').addEventListener('change', (e) => {
+    layer.mask.invert = e.target.checked; scheduleRender(); pushHistory();
+  });
+  byId('iMaskFeather').addEventListener('input', (e) => {
+    layer.mask.feather = Number(e.target.value);
+    byId('iMaskFeatherval').textContent = e.target.value;
     scheduleRender();
   });
-  byId('iExposure').addEventListener('change', () => pushHistory());
+  byId('iMaskFeather').addEventListener('change', () => pushHistory());
+  byId('iMaskClear').addEventListener('click', () => {
+    layer.mask = { enabled: false, src: null, invert: false, feather: 0 };
+    renderPropsPanel(); scheduleRender(); pushHistory('Clear mask');
+  });
 
   // ---- AI background removal ----
   byId('iBgRemove').addEventListener('click', () => runBgRemoval(layer));
@@ -141,13 +199,27 @@ async function runBgRemoval(layer) {
 
     setProgress('Applying mask…', 1);
 
-    const { keptLayer, restLayer } = splitLayerByMask(currentLayer, maskCanvas);
+    // Convert mask (R=G=B=gray, A=255) → alpha-keyed mask (R=G=B=255, A=gray)
+    // so destination-in compositing in the renderer produces correct transparency.
+    const mw = maskCanvas.width, mh = maskCanvas.height;
+    const alphaCanvas = document.createElement('canvas');
+    alphaCanvas.width = mw; alphaCanvas.height = mh;
+    const alphaCtx = alphaCanvas.getContext('2d');
+    alphaCtx.drawImage(maskCanvas, 0, 0);
+    const imgData = alphaCtx.getImageData(0, 0, mw, mh);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i + 3] = d[i]; // A = gray value (R channel)
+      d[i] = d[i + 1] = d[i + 2] = 255;
+    }
+    alphaCtx.putImageData(imgData, 0, 0);
 
-    const idx = state.layers.findIndex((l) => l.id === layer.id);
-    state.layers.splice(idx, 1, restLayer, keptLayer);
+    if (!currentLayer.mask) currentLayer.mask = { enabled: false, src: null, invert: false, feather: 0 };
+    currentLayer.mask.src = alphaCanvas.toDataURL('image/png');
+    currentLayer.mask.enabled = true;
 
-    setLastCreatedLayerId([restLayer.id, keptLayer.id]);
-    selectLayer(keptLayer.id);
+    renderPropsPanel();
+    scheduleRender();
     pushHistory('Remove background (AI)');
     hideProgress();
   } catch (err) {
