@@ -3,4 +3,4 @@ node_modules/
 *.log
 tests/output/
 .agents/
-
+PLAN.md
