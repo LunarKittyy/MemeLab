@@ -1,11 +1,10 @@
-import { state, getLayerById, ensureImage } from '../../core/state.js';
+import { getLayerById, ensureImage } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { byId, rangeRow, transformHtml, actionsHtml, wireActions, collapsibleHtml, wireCollapsible } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
-import { selectLayer } from '../../interactions/pointer.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
 
@@ -174,13 +173,27 @@ async function runBgRemoval(layer) {
 
     setProgress('Applying mask…', 1);
 
-    const { keptLayer, restLayer } = splitLayerByMask(currentLayer, maskCanvas);
+    // Convert mask (R=G=B=gray, A=255) → alpha-keyed mask (R=G=B=255, A=gray)
+    // so destination-in compositing in the renderer produces correct transparency.
+    const mw = maskCanvas.width, mh = maskCanvas.height;
+    const alphaCanvas = document.createElement('canvas');
+    alphaCanvas.width = mw; alphaCanvas.height = mh;
+    const alphaCtx = alphaCanvas.getContext('2d');
+    alphaCtx.drawImage(maskCanvas, 0, 0);
+    const imgData = alphaCtx.getImageData(0, 0, mw, mh);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i + 3] = d[i]; // A = gray value (R channel)
+      d[i] = d[i + 1] = d[i + 2] = 255;
+    }
+    alphaCtx.putImageData(imgData, 0, 0);
 
-    const idx = state.layers.findIndex((l) => l.id === layer.id);
-    state.layers.splice(idx, 1, restLayer, keptLayer);
+    if (!currentLayer.mask) currentLayer.mask = { enabled: false, src: null, invert: false, feather: 0 };
+    currentLayer.mask.src = alphaCanvas.toDataURL('image/png');
+    currentLayer.mask.enabled = true;
 
-    setLastCreatedLayerId([restLayer.id, keptLayer.id]);
-    selectLayer(keptLayer.id);
+    renderPropsPanel();
+    scheduleRender();
     pushHistory('Remove background (AI)');
     hideProgress();
   } catch (err) {
