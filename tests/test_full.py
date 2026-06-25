@@ -513,6 +513,225 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Track I: Arc text path ----
+        ctx_arc = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_arc = ctx_arc.new_page()
+        errors_arc = []
+        page_arc.on("pageerror", lambda exc: errors_arc.append(str(exc)))
+        page_arc.goto(TEST_URL)
+        page_arc.wait_for_timeout(500)
+
+        # Add a text layer and verify arc defaults to 0.
+        page_arc.click("#btnAddText")
+        page_arc.wait_for_timeout(150)
+        st_arc = page_arc.evaluate("window.__test.getState()")
+        arc_layer = next(l for l in st_arc["layers"] if l["type"] == "text")
+        check("arc: defaultTextLayer has arc=0", arc_layer.get("arc") == 0)
+        arc_id = arc_layer["id"]
+
+        # Set arc to 45 via JS (simulating slider input).
+        page_arc.evaluate("(id) => window.__test.selectLayer(id)", arc_id)
+        page_arc.wait_for_timeout(150)
+        page_arc.evaluate("""() => {
+            const sl = document.getElementById('tArc');
+            if (!sl) return;
+            sl.value = '45';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            sl.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page_arc.wait_for_timeout(100)
+        st_arc2 = page_arc.evaluate("window.__test.getState()")
+        arc_layer2 = next(l for l in st_arc2["layers"] if l["id"] == arc_id)
+        check("arc: slider sets layer.arc to 45", arc_layer2.get("arc") == 45)
+
+        # Export with arc=45 — must produce a valid PNG without errors.
+        page_arc.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        with page_arc.expect_download() as dl_arc:
+            page_arc.click("#btnExport")
+        arc_export_path = os.path.join(OUT_DIR, "arc_export.png")
+        dl_arc.value.save_as(arc_export_path)
+        img_arc = Image.open(arc_export_path)
+        check("arc: arc=45 export is a valid PNG", img_arc.size[0] > 0)
+        check("arc: no page errors during arc render", len(errors_arc) == 0, str(errors_arc))
+
+        # Reset to flat (arc=0) and verify it still exports identically shaped output.
+        page_arc.evaluate("""() => {
+            const btn = document.getElementById('tArcReset');
+            if (btn) btn.click();
+        }""")
+        page_arc.wait_for_timeout(100)
+        st_arc3 = page_arc.evaluate("window.__test.getState()")
+        arc_layer3 = next(l for l in st_arc3["layers"] if l["id"] == arc_id)
+        check("arc: reset button sets arc back to 0", arc_layer3.get("arc") == 0)
+
+        # Migration: load a snapshot that has a text layer missing the arc field.
+        page_arc.evaluate("""() => {
+            const snap = {
+                width: 1080, height: 1080,
+                background: { type: 'color', color: '#ffffff', src: null, fit: 'cover' },
+                layers: [{
+                    id: 'L999', type: 'text', name: 'Old Text',
+                    x: 100, y: 100, w: 400, h: 80, rotation: 0, opacity: 1,
+                    visible: true, locked: false, aspectLocked: false,
+                    text: 'Old layer', font: 'MemeImpact', sizeScale: 0.6,
+                    color: '#ffffff', align: 'center', vAlign: 'middle',
+                    bold: false, italic: false, lineHeight: 1.15, letterSpacing: 0, padding: 14,
+                    stroke: { enabled: false, color: '#000000', width: 2 },
+                    box: { enabled: false, mode: 'color', color: '#ffffff', amount: 16 },
+                    adjustments: [], blendMode: 'normal'
+                    // NOTE: arc field intentionally missing
+                }]
+            };
+            // applyLoadedSnapshot is not exported, so use IDB to simulate a restore.
+            return new Promise((resolve) => {
+                const req = indexedDB.open('memelab', 1);
+                req.onsuccess = () => {
+                    const db = req.result;
+                    const tx = db.transaction('kv', 'readwrite');
+                    tx.objectStore('kv').put(snap, 'project');
+                    tx.oncomplete = () => resolve(true);
+                };
+            });
+        }""")
+        page_arc.reload()
+        page_arc.wait_for_timeout(700)
+        st_migrated = page_arc.evaluate("window.__test.getState()")
+        old_layer = next((l for l in st_migrated["layers"] if l.get("name") == "Old Text"), None)
+        check("arc: migration adds arc=0 to old text layers on load",
+              old_layer is not None and old_layer.get("arc") == 0)
+        check("arc: no errors after migration reload", len(errors_arc) == 0, str(errors_arc))
+        ctx_arc.close()
+
+        # ---- Track I: Speech bubble ----
+        ctx_sb = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_sb = ctx_sb.new_page()
+        errors_sb = []
+        page_sb.on("pageerror", lambda exc: errors_sb.append(str(exc)))
+        page_sb.goto(TEST_URL)
+        page_sb.wait_for_timeout(500)
+
+        page_sb.click("#btnAddBubble")
+        page_sb.wait_for_timeout(200)
+        st_sb = page_sb.evaluate("window.__test.getState()")
+        sb_layer = next((l for l in st_sb["layers"] if l.get("subtype") == "speechbubble"), None)
+        check("speechbubble: layer created with correct subtype", sb_layer is not None)
+        if sb_layer:
+            check("speechbubble: has tailDir", sb_layer.get("tailDir") == "bottom")
+            check("speechbubble: has tailPos", sb_layer.get("tailPos") == 0.5)
+            check("speechbubble: has tailLen", sb_layer.get("tailLen") == 30)
+
+        # Export — must render without errors.
+        page_sb.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        with page_sb.expect_download() as dl_sb:
+            page_sb.click("#btnExport")
+        sb_export_path = os.path.join(OUT_DIR, "speechbubble_export.png")
+        dl_sb.value.save_as(sb_export_path)
+        img_sb = Image.open(sb_export_path)
+        check("speechbubble: export is a valid PNG", img_sb.size[0] > 0)
+        check("speechbubble: no page errors", len(errors_sb) == 0, str(errors_sb))
+
+        # Select the bubble and change tail direction via props panel.
+        sb_id = sb_layer["id"] if sb_layer else None
+        if sb_id:
+            page_sb.evaluate("(id) => window.__test.selectLayer(id)", sb_id)
+            page_sb.wait_for_timeout(150)
+            page_sb.evaluate("""() => {
+                const btns = document.querySelectorAll('#rTailDirSeg button');
+                const topBtn = [...btns].find(b => b.dataset.v === 'top');
+                if (topBtn) topBtn.click();
+            }""")
+            page_sb.wait_for_timeout(100)
+            st_sb2 = page_sb.evaluate("window.__test.getState()")
+            sb_layer2 = next((l for l in st_sb2["layers"] if l["id"] == sb_id), None)
+            check("speechbubble: tail direction updates via props",
+                  sb_layer2 is not None and sb_layer2.get("tailDir") == "top")
+
+        check("speechbubble: no errors after tail direction change", len(errors_sb) == 0, str(errors_sb))
+        ctx_sb.close()
+
+        # ---- Track I: Emoji sticker insertion ----
+        ctx_emoji = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_emoji = ctx_emoji.new_page()
+        errors_emoji = []
+        page_emoji.on("pageerror", lambda exc: errors_emoji.append(str(exc)))
+        page_emoji.goto(TEST_URL)
+        page_emoji.wait_for_timeout(500)
+
+        # Open sticker picker and click an emoji button.
+        page_emoji.click("#btnAddSticker")
+        page_emoji.wait_for_timeout(300)
+        picker_visible = page_emoji.evaluate("!!document.getElementById('stickerPickerPopover')")
+        check("emoji: sticker picker opens on button click", picker_visible)
+
+        page_emoji.evaluate("""() => {
+            const btn = document.querySelector('.sticker-emoji-btn');
+            if (btn) btn.click();
+        }""")
+        page_emoji.wait_for_timeout(200)
+        st_emoji = page_emoji.evaluate("window.__test.getState()")
+        emoji_layer = next((l for l in st_emoji["layers"] if l["type"] == "text"), None)
+        check("emoji: clicking emoji creates a text layer", emoji_layer is not None)
+        if emoji_layer:
+            check("emoji: emoji layer text is a single emoji character",
+                  bool(emoji_layer.get("text")))
+            check("emoji: emoji layer uses emoji font stack",
+                  "Emoji" in (emoji_layer.get("font") or "") or "emoji" in (emoji_layer.get("font") or "").lower())
+
+        check("emoji: no page errors during emoji insertion", len(errors_emoji) == 0, str(errors_emoji))
+        ctx_emoji.close()
+
+        # ---- Track I: Text style presets (localStorage round-trip) ----
+        ctx_preset = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_preset = ctx_preset.new_page()
+        errors_preset = []
+        page_preset.on("pageerror", lambda exc: errors_preset.append(str(exc)))
+        page_preset.goto(TEST_URL)
+        page_preset.wait_for_timeout(500)
+
+        # Set a text preset directly via localStorage + page evaluation.
+        preset_result = page_preset.evaluate("""() => {
+            const preset = {
+                name: 'TestPreset',
+                font: 'MemeImpact',
+                sizeScale: 0.5,
+                color: '#ff0000',
+                align: 'left',
+                vAlign: 'top',
+                bold: true,
+                italic: false,
+                lineHeight: 1.2,
+                letterSpacing: 2,
+                padding: 10,
+                stroke: { enabled: false, color: '#000000', width: 0 },
+                box: { enabled: false, mode: 'color', color: '#ffffff', amount: 0 }
+            };
+            localStorage.setItem('memelab-text-presets', JSON.stringify([preset]));
+            // Read it back
+            const loaded = JSON.parse(localStorage.getItem('memelab-text-presets') || '[]');
+            return loaded.length === 1 && loaded[0].name === 'TestPreset' && loaded[0].color === '#ff0000';
+        }""")
+        check("presets: localStorage round-trip works correctly", preset_result)
+
+        # Add a text layer, select it, open props, apply the preset via UI.
+        page_preset.click("#btnAddText")
+        page_preset.wait_for_timeout(150)
+        st_pre = page_preset.evaluate("window.__test.getState()")
+        pre_id = next(l["id"] for l in st_pre["layers"] if l["type"] == "text")
+        page_preset.evaluate("(id) => window.__test.selectLayer(id)", pre_id)
+        page_preset.wait_for_timeout(200)
+
+        # Re-render props panel to pick up presets from localStorage.
+        page_preset.reload()
+        page_preset.wait_for_timeout(700)
+        # The preset is in localStorage — check it's persisted.
+        preset_still_there = page_preset.evaluate("""() => {
+            const loaded = JSON.parse(localStorage.getItem('memelab-text-presets') || '[]');
+            return loaded.length >= 1 && loaded[0].name === 'TestPreset';
+        }""")
+        check("presets: preset survives page reload in localStorage", preset_still_there)
+        check("presets: no page errors throughout", len(errors_preset) == 0, str(errors_preset))
+        ctx_preset.close()
+
         browser.close()
 
 

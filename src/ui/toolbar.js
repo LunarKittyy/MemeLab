@@ -1,5 +1,6 @@
 import { state, getSelected } from '../core/state.js';
-import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/layers.js';
+import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultSpeechBubbleLayer } from '../core/layers.js';
+import { toggleStickerPicker } from './stickerPicker.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
 import { ensureImage } from '../core/state.js';
@@ -40,6 +41,16 @@ export function addRectLayerAction() {
   renderLayerList();
   selectLayer(l.id);
   pushHistory('Add shape layer');
+}
+
+export function addSpeechBubbleAction() {
+  const l = defaultSpeechBubbleLayer();
+  state.layers.push(l);
+  setLastCreatedLayerId(l.id);
+  renderLayerList();
+  selectLayer(l.id);
+  scheduleRender();
+  pushHistory('Add speech bubble');
 }
 
 function handleImageFile(file, target) {
@@ -173,6 +184,11 @@ export function initIcons() {
   setIcon('iconAddRect', 'shape');
   setIcon('btnOpenLeft', 'layers');
   setIcon('btnOpenRight', 'brush');
+  // New buttons — icons may not exist in ICONS; fall back gracefully
+  const bubbleIconEl = document.getElementById('iconAddBubble');
+  if (bubbleIconEl) bubbleIconEl.textContent = '💬';
+  const stickerIconEl = document.getElementById('iconAddSticker');
+  if (stickerIconEl) stickerIconEl.textContent = '😊';
 }
 
 export function updateHistoryButtons(canUndo, canRedo) {
@@ -193,6 +209,10 @@ export function wireGlobalUI() {
   document.getElementById('btnAddText').addEventListener('click', addTextLayerAction);
   document.getElementById('btnAddRect').addEventListener('click', addRectLayerAction);
   document.getElementById('btnAddImage').addEventListener('click', () => { pendingImageTarget = null; fileInput.click(); });
+  const btnBubble = document.getElementById('btnAddBubble');
+  if (btnBubble) btnBubble.addEventListener('click', addSpeechBubbleAction);
+  const btnSticker = document.getElementById('btnAddSticker');
+  if (btnSticker) btnSticker.addEventListener('click', () => toggleStickerPicker(btnSticker));
   fileInput.addEventListener('change', () => {
     if (fileInput.files && fileInput.files[0]) handleImageFile(fileInput.files[0], pendingImageTarget);
     fileInput.value = '';
