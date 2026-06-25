@@ -5,7 +5,8 @@ export const state = {
   height: 1080,
   background: { type: 'color', color: '#ffffff', src: null, fit: 'cover' },
   layers: [],
-  selectedId: null,
+  selectedId: null,       // string | null — primary selection (drives props panel)
+  selectedIds: new Set(), // Set<string> — full multi-select set (transient UI state, never persisted)
 };
 
 export const imageCache = new Map();

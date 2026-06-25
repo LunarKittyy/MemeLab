@@ -4,18 +4,25 @@
 // special test-mode branching needed anywhere in the app code itself.
 
 import { state } from '../src/core/state.js';
-import { selectLayer } from '../src/interactions/pointer.js';
+import { selectLayer, selectLayers } from '../src/interactions/pointer.js';
 import { stage, getViewportFitScale } from '../src/render/renderer.js';
 import { viewport } from '../src/core/viewport.js';
 
 window.__test = {
   getState() {
-    return JSON.parse(JSON.stringify(state));
+    // selectedIds is a Set — JSON.stringify drops it, so serialize manually
+    const s = JSON.parse(JSON.stringify(state));
+    s.selectedIds = [...state.selectedIds];
+    return s;
   },
   getSelectedId() {
     return state.selectedId;
   },
+  getSelectedIds() {
+    return [...state.selectedIds];
+  },
   selectLayer,
+  selectLayers,
   getViewport() {
     return { ...viewport, fitScale: getViewportFitScale() };
   },

@@ -513,6 +513,172 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Section 5: Track L — Layer Panel Coherence ----
+        ctx_l = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_l = ctx_l.new_page()
+        errors_l = []
+        page_l.on("pageerror", lambda exc: errors_l.append(str(exc)))
+        page_l.goto(TEST_URL)
+        page_l.wait_for_timeout(500)
+        check("track-l: boots clean", len(errors_l) == 0, str(errors_l))
+
+        # Add two text layers so we have multiple to work with
+        page_l.click("#btnAddText")
+        page_l.wait_for_timeout(150)
+        page_l.click("#btnAddText")
+        page_l.wait_for_timeout(150)
+        st_l = page_l.evaluate("window.__test.getState()")
+        check("track-l: two text layers added", len(st_l["layers"]) == 2)
+        lid_a = st_l["layers"][0]["id"]
+        lid_b = st_l["layers"][1]["id"]
+
+        # ---- Row icon trim: no dup/delete buttons in row ----
+        dup_in_row = page_l.evaluate("""() => !!document.querySelector('.layerrow .dup')""")
+        del_in_row = page_l.evaluate("""() => !!document.querySelector('.layerrow .del')""")
+        merge_in_row = page_l.evaluate("""() => !!document.querySelector('.layerrow .merge')""")
+        check("track-l: no dup button in layer row", not dup_in_row)
+        check("track-l: no delete button in layer row", not del_in_row)
+        check("track-l: no merge button in layer row", not merge_in_row)
+        vis_in_row = page_l.evaluate("""() => !!document.querySelector('.layerrow .vis')""")
+        lock_in_row = page_l.evaluate("""() => !!document.querySelector('.layerrow .lock')""")
+        check("track-l: vis button still in layer row", vis_in_row)
+        check("track-l: lock button still in layer row", lock_in_row)
+
+        # ---- Single click selects, does NOT open rename ----
+        page_l.evaluate("(id) => window.__test.selectLayer(id)", lid_a)
+        page_l.wait_for_timeout(100)
+        # Check that there's a lname-text span, not an active input
+        rename_input_visible = page_l.evaluate("""() => !!document.querySelector('.layerrow .lname-input')""")
+        check("track-l: single-select does not activate rename input", not rename_input_visible)
+
+        # ---- Double-click on layer name activates inline rename ----
+        # Select layer A first via API
+        page_l.evaluate("(id) => window.__test.selectLayer(id)", lid_a)
+        page_l.wait_for_timeout(100)
+        # Find the selected row's name span and double-click it
+        row_a_selector = f'.layerrow[data-id="{lid_a}"] .lname-text'
+        page_l.dblclick(row_a_selector)
+        page_l.wait_for_timeout(150)
+        rename_input_active = page_l.evaluate("""() => !!document.querySelector('.layerrow .lname-input')""")
+        check("track-l: double-click on layer name activates rename input", rename_input_active)
+        # Type a new name and confirm with Enter
+        page_l.keyboard.type("MyRenamedLayer")
+        page_l.keyboard.press("Enter")
+        page_l.wait_for_timeout(150)
+        st_after_rename = page_l.evaluate("window.__test.getState()")
+        layer_a_name = next(l["name"] for l in st_after_rename["layers"] if l["id"] == lid_a)
+        check("track-l: rename via double-click updates layer name", layer_a_name == "MyRenamedLayer",
+              f"name={layer_a_name}")
+        # Rename input should be gone after confirm
+        rename_input_gone = page_l.evaluate("""() => !document.querySelector('.layerrow .lname-input')""")
+        check("track-l: rename input dismissed after Enter", rename_input_gone)
+
+        # ---- Undo after rename reverts the name ----
+        page_l.click("#btnUndo")
+        page_l.wait_for_timeout(150)
+        st_undo_rename = page_l.evaluate("window.__test.getState()")
+        layer_a_name_after_undo = next(l["name"] for l in st_undo_rename["layers"] if l["id"] == lid_a)
+        check("track-l: undo after rename reverts the name",
+              layer_a_name_after_undo != "MyRenamedLayer",
+              f"name after undo={layer_a_name_after_undo}")
+
+        # ---- Context menu has "Rename" item ----
+        # Right-click on a layer row
+        page_l.evaluate("(id) => window.__test.selectLayer(id)", lid_a)
+        page_l.wait_for_timeout(100)
+        row_a = page_l.locator(f'.layerrow[data-id="{lid_a}"]')
+        row_a.click(button="right")
+        page_l.wait_for_timeout(100)
+        rename_in_menu = page_l.evaluate("""() => {
+            const items = [...document.querySelectorAll('.ctx-item')];
+            return items.some(el => el.textContent.trim().toLowerCase() === 'rename');
+        }""")
+        check("track-l: context menu has Rename item", rename_in_menu)
+        # Dismiss menu
+        page_l.keyboard.press("Escape")
+        page_l.wait_for_timeout(100)
+
+        # ---- Multi-select: Ctrl-click adds to selection ----
+        page_l.evaluate("(id) => window.__test.selectLayer(id)", lid_a)
+        page_l.wait_for_timeout(100)
+        # Ctrl-click layer B row
+        row_b = page_l.locator(f'.layerrow[data-id="{lid_b}"]')
+        row_b.click(modifiers=["Control"])
+        page_l.wait_for_timeout(100)
+        sel_ids = page_l.evaluate("window.__test.getSelectedIds()")
+        check("track-l: ctrl-click adds second layer to selectedIds",
+              lid_a in sel_ids and lid_b in sel_ids,
+              f"selectedIds={sel_ids}")
+        check("track-l: multi-select has 2 layers", len(sel_ids) == 2, f"count={len(sel_ids)}")
+
+        # Check that multi-selected row has the multi-selected CSS class
+        multi_class = page_l.evaluate(f"""() => {{
+            const row = document.querySelector('.layerrow[data-id="{lid_a}"]');
+            return row ? row.classList.contains('multi-selected') : false;
+        }}""")
+        check("track-l: secondary selected row gets multi-selected class", multi_class)
+
+        # ---- Single click clears multi-select ----
+        row_b.click()
+        page_l.wait_for_timeout(100)
+        sel_ids_after = page_l.evaluate("window.__test.getSelectedIds()")
+        check("track-l: single click clears multi-select to one layer",
+              len(sel_ids_after) == 1, f"selectedIds={sel_ids_after}")
+
+        # ---- Multi-select group move: moving primary moves all ----
+        # Re-select both layers
+        page_l.evaluate("(id) => window.__test.selectLayer(id)", lid_a)
+        page_l.wait_for_timeout(100)
+        row_b.click(modifiers=["Control"])
+        page_l.wait_for_timeout(100)
+
+        # Record initial positions
+        st_before_move = page_l.evaluate("window.__test.getState()")
+        la_before = next(l for l in st_before_move["layers"] if l["id"] == lid_a)
+        lb_before = next(l for l in st_before_move["layers"] if l["id"] == lid_b)
+
+        # Find primary (lid_b is primary after ctrl-click) screen rect and drag
+        primary_id = page_l.evaluate("window.__test.getSelectedId()")
+        r_move = page_l.evaluate("(id) => window.__test.layerScreenRect(id)", primary_id)
+        page_l.mouse.move(r_move["cx"], r_move["cy"])
+        page_l.mouse.down()
+        page_l.mouse.move(r_move["cx"] + 60, r_move["cy"] + 40, steps=6)
+        page_l.mouse.up()
+        page_l.wait_for_timeout(150)
+
+        st_after_move = page_l.evaluate("window.__test.getState()")
+        la_after = next(l for l in st_after_move["layers"] if l["id"] == lid_a)
+        lb_after = next(l for l in st_after_move["layers"] if l["id"] == lid_b)
+
+        la_moved = abs(la_after["x"] - la_before["x"]) > 5 or abs(la_after["y"] - la_before["y"]) > 5
+        lb_moved = abs(lb_after["x"] - lb_before["x"]) > 5 or abs(lb_after["y"] - lb_before["y"]) > 5
+        check("track-l: group move moves primary selected layer", lb_moved,
+              f"lb x: {lb_before['x']:.0f} -> {lb_after['x']:.0f}")
+        check("track-l: group move also moves secondary selected layer", la_moved,
+              f"la x: {la_before['x']:.0f} -> {la_after['x']:.0f}")
+
+        # The deltas should be approximately equal (group move)
+        dx_a = la_after["x"] - la_before["x"]
+        dy_a = la_after["y"] - la_before["y"]
+        dx_b = lb_after["x"] - lb_before["x"]
+        dy_b = lb_after["y"] - lb_before["y"]
+        same_delta = abs(dx_a - dx_b) < 2 and abs(dy_a - dy_b) < 2
+        check("track-l: group move applies same delta to all selected layers", same_delta,
+              f"da=({dx_a:.1f},{dy_a:.1f}) db=({dx_b:.1f},{dy_b:.1f})")
+
+        # ---- selectedIds not in undo history snapshots ----
+        # After undo, selectedIds should be cleared/reset (not the multi-select state)
+        page_l.click("#btnUndo")
+        page_l.wait_for_timeout(100)
+        sel_ids_after_undo = page_l.evaluate("window.__test.getSelectedIds()")
+        # Should have at most 1 id (the primary from the snapshot), not two
+        check("track-l: selectedIds reset after undo (not persisted in history)",
+              len(sel_ids_after_undo) <= 1,
+              f"selectedIds after undo={sel_ids_after_undo}")
+
+        check("track-l: no page errors throughout", len(errors_l) == 0, str(errors_l))
+        ctx_l.close()
+
         browser.close()
 
 

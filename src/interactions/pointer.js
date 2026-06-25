@@ -1,4 +1,4 @@
-import { state, getSelected, MIN_SIZE } from '../core/state.js';
+import { state, getSelected, getLayerById, MIN_SIZE } from '../core/state.js';
 import { clamp, deg2rad, rad2deg, rotVec } from '../core/utils.js';
 import { stage, dispScaleFactor, scheduleRender, applyViewportToStage } from '../render/renderer.js';
 import { viewport, resetViewport } from '../core/viewport.js';
@@ -27,8 +27,44 @@ const selectionListeners = [];
 export function onSelectionChange(fn) {
   selectionListeners.push(fn);
 }
-export function selectLayer(id) {
-  state.selectedId = id;
+
+/**
+ * Select a layer by id.
+ * opts.multi = true: toggle this id in selectedIds (Ctrl/Cmd-click behaviour).
+ * opts.addOnly = true: add to selectedIds without toggling (used for range-select).
+ * Default (no opts): clear selectedIds, set selectedId to id.
+ */
+export function selectLayer(id, opts) {
+  if (opts && opts.multi) {
+    // Ctrl/Cmd-click: toggle in selectedIds
+    if (id && state.selectedIds.has(id)) {
+      state.selectedIds.delete(id);
+      // If we're removing the primary, promote another from the set
+      if (state.selectedId === id) {
+        const remaining = [...state.selectedIds];
+        state.selectedId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      }
+    } else if (id) {
+      state.selectedIds.add(id);
+      state.selectedId = id; // most-recently-toggled becomes primary
+    }
+  } else {
+    // Plain click: clear multi-select, set single selection
+    state.selectedId = id;
+    state.selectedIds = new Set(id && id !== 'background' ? [id] : []);
+  }
+  selectionListeners.forEach((fn) => fn());
+}
+
+/**
+ * Bulk-select a set of layer ids (for range-select).
+ * Merges into existing selectedIds; sets selectedId to the last in ids.
+ */
+export function selectLayers(ids) {
+  for (const id of ids) {
+    if (id && id !== 'background') state.selectedIds.add(id);
+  }
+  if (ids.length > 0) state.selectedId = ids[ids.length - 1];
   selectionListeners.forEach((fn) => fn());
 }
 
@@ -159,7 +195,13 @@ function onPointerDown(evt) {
       stage.setPointerCapture(evt.pointerId);
       const hit = hitLayerAt(p.x, p.y);
       const potentialSelectId = (hit && hit.id !== sel.id) ? hit.id : null;
-      drag = { kind: 'move', layer: sel, startX: p.x, startY: p.y, origX: sel.x, origY: sel.y, hasMoved: false, potentialSelectId };
+      // Capture original positions for all selected layers (group move)
+      const origPositions = {};
+      for (const id of state.selectedIds) {
+        const l = getLayerById(id);
+        if (l) origPositions[id] = { x: l.x, y: l.y };
+      }
+      drag = { kind: 'move', layer: sel, startX: p.x, startY: p.y, origX: sel.x, origY: sel.y, hasMoved: false, potentialSelectId, origPositions };
       return;
     }
   }
@@ -168,7 +210,8 @@ function onPointerDown(evt) {
   if (hit) {
     selectLayer(hit.id);
     stage.setPointerCapture(evt.pointerId);
-    drag = { kind: 'move', layer: hit, startX: p.x, startY: p.y, origX: hit.x, origY: hit.y, hasMoved: false };
+    const origPositions = { [hit.id]: { x: hit.x, y: hit.y } };
+    drag = { kind: 'move', layer: hit, startX: p.x, startY: p.y, origX: hit.x, origY: hit.y, hasMoved: false, origPositions };
   } else {
     selectLayer(null);
   }
@@ -185,9 +228,21 @@ function onPointerMove(evt) {
   const layer = drag.layer;
 
   if (drag.kind === 'move') {
-    layer.x = drag.origX + (p.x - drag.startX);
-    layer.y = drag.origY + (p.y - drag.startY);
-    if (Math.hypot(p.x - drag.startX, p.y - drag.startY) > 3) {
+    const dx = p.x - drag.startX, dy = p.y - drag.startY;
+    if (state.selectedIds.size > 1 && drag.origPositions) {
+      // Group move: translate all selected layers by the same delta
+      for (const id of state.selectedIds) {
+        const l = getLayerById(id);
+        if (l && drag.origPositions[id]) {
+          l.x = drag.origPositions[id].x + dx;
+          l.y = drag.origPositions[id].y + dy;
+        }
+      }
+    } else {
+      layer.x = drag.origX + dx;
+      layer.y = drag.origY + dy;
+    }
+    if (Math.hypot(dx, dy) > 3) {
       drag.hasMoved = true;
     }
   } else if (drag.kind === 'pinch') {
@@ -257,8 +312,16 @@ function onPointerUp(evt) {
   if (d.kind === 'canvasPinch') return;
 
   if (d.kind === 'move' && !d.hasMoved) {
-    d.layer.x = d.origX;
-    d.layer.y = d.origY;
+    // Restore original positions (relevant when multi-select was active)
+    if (d.origPositions) {
+      for (const id of Object.keys(d.origPositions)) {
+        const l = getLayerById(id);
+        if (l) { l.x = d.origPositions[id].x; l.y = d.origPositions[id].y; }
+      }
+    } else {
+      d.layer.x = d.origX;
+      d.layer.y = d.origY;
+    }
     scheduleRender();
     if (d.potentialSelectId) {
       selectLayer(d.potentialSelectId);

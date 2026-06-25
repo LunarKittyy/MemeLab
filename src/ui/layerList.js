@@ -1,7 +1,7 @@
 import { state, getLayerById, nextId, pruneImageCache } from '../core/state.js';
 import { pushHistory } from '../core/history.js';
 import { scheduleRender, renderLayersToCtx, updateThumbnails } from '../render/renderer.js';
-import { selectLayer } from '../interactions/pointer.js';
+import { selectLayer, selectLayers } from '../interactions/pointer.js';
 import { ICONS } from './icons.js';
 import { renderPropsPanel } from './props/panel.js';
 import { showContextMenu } from './contextMenu.js';
@@ -64,10 +64,59 @@ function commitDrag(ul, clientY) {
 export function updateLayerListSelection() {
   const ul = document.getElementById('layerList');
   ul.querySelectorAll('.layerrow[data-id]').forEach(li => {
-    li.classList.toggle('selected', li.dataset.id === state.selectedId);
+    const id = li.dataset.id;
+    li.classList.toggle('selected', id === state.selectedId);
+    li.classList.toggle('multi-selected', state.selectedIds.has(id) && id !== state.selectedId);
   });
   const bg = ul.querySelector('.bgrow');
   if (bg) bg.classList.toggle('selected', state.selectedId === 'background');
+}
+
+/**
+ * Activate inline rename for a layer row.
+ * Replaces the static name span with a focused input.
+ */
+function activateRename(li, l) {
+  const nameSpan = li.querySelector('.lname-text');
+  if (!nameSpan) return;
+  // Don't activate if already in rename mode
+  if (li.querySelector('.lname-input')) return;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'lname-input';
+  input.value = l.name;
+  input.setAttribute('aria-label', 'Layer name');
+
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function confirmRename() {
+    const newName = input.value.trim() || l.name;
+    l.name = newName;
+    // Replace input back with span
+    const span = document.createElement('span');
+    span.className = 'lname-text';
+    span.textContent = l.name;
+    input.replaceWith(span);
+    // Re-wire double-click on the new span
+    span.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      activateRename(li, l);
+    });
+    pushHistory('Rename layer');
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { input.blur(); }
+    if (e.key === 'Escape') { input.value = l.name; input.blur(); }
+    e.stopPropagation(); // don't let keyboard shortcuts fire during rename
+  });
+  input.addEventListener('blur', confirmRename);
+  // Prevent click on input from triggering row selection
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('pointerdown', (e) => e.stopPropagation());
 }
 
 export function renderLayerList() {
@@ -79,27 +128,32 @@ export function renderLayerList() {
     li.textContent = 'No layers yet. Add text, an image, or a shape above to get started.';
     ul.appendChild(li);
   }
+  // Rendered top→bottom corresponds to front→back (state.layers[last] = topmost/front)
   for (let i = state.layers.length - 1; i >= 0; i--) {
     const l = state.layers[i];
     const li = document.createElement('li');
-    li.className = 'layerrow' + (l.id === state.selectedId ? ' selected' : '') + (!l.visible ? ' is-hidden' : '');
+    const isPrimary = l.id === state.selectedId;
+    const isMultiSel = state.selectedIds.has(l.id) && !isPrimary;
+    li.className = 'layerrow'
+      + (isPrimary ? ' selected' : '')
+      + (isMultiSel ? ' multi-selected' : '')
+      + (!l.visible ? ' is-hidden' : '');
     if (l.id === lastCreatedLayerId || (Array.isArray(lastCreatedLayerId) && lastCreatedLayerId.includes(l.id))) {
       li.classList.add('new-layer-pop');
     }
     li.dataset.id = l.id;
     li.dataset.layerIdx = i;
+
+    // Build row DOM manually to wire events efficiently
     li.innerHTML = `
       <div class="layer-preview">
         <img class="thumb-img" data-id="${l.id}" width="60" height="60" alt="" draggable="false" />
         <div class="mini-typebadge">${typeBadgeIcon(l.type)}</div>
       </div>
-      <input class="lname" value="${escapeAttr(l.name)}" data-id="${l.id}" />
+      <span class="lname lname-text">${escapeAttr(l.name)}</span>
       <div class="lbtns">
-        <button class="micro vis" data-id="${l.id}">${l.visible ? ICONS.eye : ICONS.eyeOff}</button>
-        <button class="micro lock" data-id="${l.id}">${l.locked ? ICONS.lock : ICONS.unlock}</button>
-        <button class="micro dup" data-id="${l.id}">${ICONS.copy}</button>
-        <button class="micro merge" data-id="${l.id}" ${i === 0 ? 'disabled title="Nothing below to merge into"' : 'title="Merge down"'}>${ICONS.mergeDown}</button>
-        <button class="micro danger del" data-id="${l.id}">${ICONS.trash}</button>
+        <button class="micro vis" data-id="${l.id}" title="${l.visible ? 'Hide layer' : 'Show layer'}" aria-label="${l.visible ? 'Hide' : 'Show'}">${l.visible ? ICONS.eye : ICONS.eyeOff}</button>
+        <button class="micro lock" data-id="${l.id}" title="${l.locked ? 'Unlock layer' : 'Lock layer'}" aria-label="${l.locked ? 'Unlock' : 'Lock'}">${l.locked ? ICONS.lock : ICONS.unlock}</button>
       </div>
       <div class="layer-drag-handle" title="Drag to reorder">
         <svg viewBox="0 0 8 14" fill="currentColor" width="10" height="14">
@@ -108,16 +162,58 @@ export function renderLayerList() {
           <circle cx="2" cy="12" r="1.4"/><circle cx="6" cy="12" r="1.4"/>
         </svg>
       </div>`;
-    li.addEventListener('click', (e) => {
-      if (_suppressNextClick) return;
-      if (!e.target.closest('button') && !e.target.closest('.layer-drag-handle')) selectLayer(l.id);
+
+    // Wire double-click on name span for inline rename
+    const nameSpan = li.querySelector('.lname-text');
+    nameSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      // Ensure the layer is selected first
+      if (state.selectedId !== l.id) selectLayer(l.id);
+      activateRename(li, l);
     });
 
+    // Click on row — handle multi-select modifiers
+    li.addEventListener('click', (e) => {
+      if (_suppressNextClick) return;
+      if (e.target.closest('button') || e.target.closest('.layer-drag-handle') || e.target.closest('.lname-input')) return;
+
+      if (e.shiftKey && state.selectedId && state.selectedId !== 'background') {
+        // Range select: from current selectedId to this layer
+        const currentIdx = state.layers.findIndex(x => x.id === state.selectedId);
+        const targetIdx = i; // i from closure
+        if (currentIdx !== -1) {
+          const minIdx = Math.min(currentIdx, targetIdx);
+          const maxIdx = Math.max(currentIdx, targetIdx);
+          const rangeIds = state.layers.slice(minIdx, maxIdx + 1).map(x => x.id);
+          selectLayers(rangeIds);
+        } else {
+          selectLayer(l.id);
+        }
+      } else if (e.ctrlKey || e.metaKey) {
+        // Toggle this layer in/out of selection
+        selectLayer(l.id, { multi: true });
+      } else {
+        // Plain click: single selection
+        selectLayer(l.id);
+      }
+    });
+
+    // Context menu
     li.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // Ensure this layer is selected when right-clicking
+      if (state.selectedId !== l.id) selectLayer(l.id);
       const idx = state.layers.findIndex(x => x.id === l.id);
       showContextMenu(e.clientX, e.clientY, [
+        { action: 'rename', label: 'Rename', onClick: () => {
+          // Need a tiny delay to let the menu close and DOM settle
+          setTimeout(() => {
+            const row = ul.querySelector(`.layerrow[data-id="${l.id}"]`);
+            if (row) activateRename(row, l);
+          }, 10);
+        }},
+        'sep',
         { action: 'vis',   label: l.visible ? 'Hide layer' : 'Show layer', onClick: () => { l.visible = !l.visible; pushHistory('Toggle visibility'); renderLayerList(); scheduleRender(); } },
         { action: 'lock',  label: l.locked ? 'Unlock layer' : 'Lock layer', onClick: () => { l.locked = !l.locked; pushHistory('Toggle lock'); renderLayerList(); scheduleRender(); } },
         'sep',
@@ -202,14 +298,26 @@ export function renderLayerList() {
   bg.addEventListener('click', () => selectLayer('background'));
   ul.appendChild(bg);
 
-  ul.querySelectorAll('.vis').forEach((b) => b.addEventListener('click', () => { const l = getLayerById(b.dataset.id); l.visible = !l.visible; pushHistory('Toggle visibility'); renderLayerList(); scheduleRender(); }));
-  ul.querySelectorAll('.lock').forEach((b) => b.addEventListener('click', () => { const l = getLayerById(b.dataset.id); l.locked = !l.locked; pushHistory('Toggle lock'); renderLayerList(); scheduleRender(); }));
-  ul.querySelectorAll('.del').forEach((b) => b.addEventListener('click', () => deleteLayer(b.dataset.id)));
-  ul.querySelectorAll('.dup').forEach((b) => b.addEventListener('click', () => duplicateLayer(b.dataset.id)));
-  ul.querySelectorAll('.merge').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) mergeLayerDown(b.dataset.id); }));
-  ul.querySelectorAll('input.lname').forEach((inp) => {
-    inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
-  });
+  // Wire visibility and lock buttons
+  ul.querySelectorAll('.vis').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const l = getLayerById(b.dataset.id);
+    if (!l) return;
+    l.visible = !l.visible;
+    pushHistory('Toggle visibility');
+    renderLayerList();
+    scheduleRender();
+  }));
+  ul.querySelectorAll('.lock').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const l = getLayerById(b.dataset.id);
+    if (!l) return;
+    l.locked = !l.locked;
+    pushHistory('Toggle lock');
+    renderLayerList();
+    scheduleRender();
+  }));
+
   lastCreatedLayerId = null;
   updateThumbnails();
 }
@@ -219,6 +327,7 @@ export function deleteLayer(id) {
   if (idx === -1) return;
   state.layers.splice(idx, 1);
   if (state.selectedId === id) state.selectedId = null;
+  state.selectedIds.delete(id);
   pruneImageCache();
   pushHistory('Delete layer'); renderLayerList(); renderPropsPanel(); scheduleRender();
 }

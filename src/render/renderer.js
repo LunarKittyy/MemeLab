@@ -54,6 +54,25 @@ function drawSelectionOverlay(ctx) {
   const layer = getSelected();
   if (!layer) return;
   const ds = dispScaleFactor();
+
+  // Draw simple border-only outlines for secondary selections (all in selectedIds except primary)
+  for (const id of state.selectedIds) {
+    if (id === state.selectedId) continue; // primary drawn below with full handles
+    const sl = state.layers.find(l => l.id === id);
+    if (!sl) continue;
+    ctx.save();
+    const scx = sl.x + sl.w / 2, scy = sl.y + sl.h / 2;
+    ctx.translate(scx, scy);
+    ctx.rotate(deg2rad(sl.rotation));
+    ctx.strokeStyle = 'rgba(255, 61, 138, 0.55)';
+    ctx.lineWidth = 1.4 * ds;
+    ctx.setLineDash([4 * ds, 3 * ds]);
+    ctx.strokeRect(-sl.w / 2, -sl.h / 2, sl.w, sl.h);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Draw full selection handles for the primary selected layer
   ctx.save();
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
   ctx.translate(cx, cy);
