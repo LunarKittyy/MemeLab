@@ -14,38 +14,37 @@
 
   <aside class="panel panel-left" id="panelLeft">
     <div class="panel-scroll">
-      <div class="add-row">
-        <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
-        <button class="addbtn" id="btnAddImage"><span class="icon" id="iconAddImage"></span>Image</button>
-        <button class="addbtn" id="btnAddRect"><span class="icon" id="iconAddRect"></span>Shape</button>
-        <input type="file" id="fileInput" accept="image/*">
-      </div>
-
       <div class="section">
         <div class="section-title">Canvas</div>
         <div class="row">
           <label>Size</label>
-          <select class="fullselect grow" id="sizePreset">
-            <option value="1080x1080">Square 1080</option>
-            <option value="1200x900">Classic 4:3</option>
-            <option value="1200x675">Wide 16:9</option>
-            <option value="1080x1920">Story 9:16</option>
-            <option value="custom">Custom…</option>
-          </select>
+          <div class="csel grow" id="sizePreset" data-value="1080x1080" tabindex="0" role="combobox">
+            <span class="csel-label">Square 1080</span>
+            <svg class="csel-chevron" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="csel-popup" role="listbox">
+              <div class="csel-opt csel-opt-sel" data-value="1080x1080">Square 1080</div>
+              <div class="csel-opt" data-value="1200x900">Classic 4:3</div>
+              <div class="csel-opt" data-value="1200x675">Wide 16:9</div>
+              <div class="csel-opt" data-value="1080x1920">Story 9:16</div>
+              <div class="csel-opt" data-value="custom">Custom…</div>
+            </div>
+          </div>
         </div>
         <div class="sizegrid" id="customSizeRow" style="display:none;margin-top:8px;">
           <div class="numfield"><span>W</span><input class="fullinput" type="number" id="customW" min="50" max="4000"></div>
           <div class="numfield"><span>H</span><input class="fullinput" type="number" id="customH" min="50" max="4000"></div>
         </div>
-      </div>
-
-
-      <div class="section">
-        <button class="smallbtn full" id="btnReset">Reset canvas</button>
+        <button class="smallbtn full" id="btnReset" style="margin-top:6px;">Reset canvas</button>
       </div>
 
       <div class="section">
         <div class="section-title">Layers</div>
+        <div class="add-row">
+          <button class="addbtn" id="btnAddText"><span class="icon" id="iconAddText"></span>Text</button>
+          <button class="addbtn" id="btnAddImage"><span class="icon" id="iconAddImage"></span>Image</button>
+          <button class="addbtn" id="btnAddRect"><span class="icon" id="iconAddRect"></span>Shape</button>
+          <input type="file" id="fileInput" accept="image/*">
+        </div>
       </div>
       <ul class="layerlist" id="layerList"></ul>
     </div>
@@ -56,6 +55,10 @@
       <canvas id="stage"></canvas>
     </div>
     <div class="hint-toast" id="hintToast"></div>
+    <div class="zoom-indicator" id="zoomIndicator">
+      <span id="zoomPct">100%</span>
+      <button class="zoom-reset-btn" id="zoomReset" title="Reset zoom (Dblclick bg)">Fit</button>
+    </div>
   </main>
 
   <aside class="panel panel-right" id="panelRight">
@@ -76,12 +79,15 @@
   <button class="iconbtn panelbtn" id="btnOpenRight" title="Style"></button>
   <div class="divider panelbtn-divider"></div>
   <div class="savestatus" id="saveStatus" title="Nothing to save yet"><span class="savedot idle" id="saveDot"></span></div>
-  <select class="exportscale" id="exportScale" title="Export resolution">
-    <option value="1">1x export</option>
-    <option value="2" selected>2x export</option>
-    <option value="3">3x export</option>
-  </select>
-  <button class="primarybtn" id="btnExport">Export</button>
+  <div class="export-split" id="exportScale" data-value="2">
+    <button class="primarybtn export-main" id="btnExport">Export</button>
+    <button class="primarybtn export-arrow" title="Export resolution" tabindex="0"><span class="export-scale-label">2x</span></button>
+    <div class="csel-popup export-scale-popup" role="listbox">
+      <div class="csel-opt" data-value="1">1x</div>
+      <div class="csel-opt csel-opt-sel" data-value="2">2x</div>
+      <div class="csel-opt" data-value="3">3x</div>
+    </div>
+  </div>
 </div>
 
 <div class="help-modal" id="helpModal">

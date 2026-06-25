@@ -5,6 +5,12 @@ import { scheduleRender } from '../../render/renderer.js';
 import { onDragTick } from '../../interactions/pointer.js';
 import { deleteLayer, duplicateLayer } from '../layerList.js';
 
+export const BLEND_MODES = [
+  'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
+  'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference',
+  'exclusion', 'hue', 'saturation', 'color', 'luminosity',
+];
+
 export function byId(id) {
   return document.getElementById(id);
 }
@@ -21,7 +27,31 @@ export function rangeRow(labelText, id, min, max, step, value) {
   return `<div class="row"><label>${labelText}</label><input class="grow" type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}"><span class="rangeval" id="${id}val">${value}</span></div>`;
 }
 
+export function collapsibleHtml(id, title, innerHtml, { defaultOpen = false } = {}) {
+  return `<div class="collapsible" id="${id}">
+    <button class="collapsible-hdr" aria-expanded="${defaultOpen}" type="button">
+      <span>${title}</span><span class="collapsible-chevron">▾</span>
+    </button>
+    <div class="collapsible-body" style="display:${defaultOpen ? 'block' : 'none'}">${innerHtml}</div>
+  </div>`;
+}
+
+export function wireCollapsible(id) {
+  const el = byId(id);
+  if (!el) return;
+  el.querySelector('.collapsible-hdr').addEventListener('click', () => {
+    const body = el.querySelector('.collapsible-body');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    el.querySelector('.collapsible-hdr').setAttribute('aria-expanded', open);
+  });
+}
+
 export function transformHtml(layer) {
+  const blendOpts = BLEND_MODES.map((m) =>
+    `<option value="${m}"${(layer.blendMode || 'normal') === m ? ' selected' : ''}>${m}</option>`
+  ).join('');
+  const advancedInner = `<div class="row"><label>Blend</label><select class="grow" id="pBlend">${blendOpts}</select></div>`;
   return `
     <div class="section">
       <div class="section-title">Transform</div>
@@ -33,6 +63,7 @@ export function transformHtml(layer) {
       </div>
       ${rangeRow('Rotate', 'pRot', 0, 359, 1, Math.round(layer.rotation))}
       ${rangeRow('Opacity', 'pOpac', 0, 1, 0.01, layer.opacity)}
+      ${collapsibleHtml('pAdvanced', 'Advanced', advancedInner)}
     </div>`;
 }
 
@@ -46,6 +77,8 @@ export function wireCommonTransformProps(layer) {
   byId('pRot').addEventListener('change', pushHistory);
   byId('pOpac').addEventListener('input', (e) => { layer.opacity = +e.target.value; byId('pOpacval').textContent = e.target.value; scheduleRender(); });
   byId('pOpac').addEventListener('change', pushHistory);
+  byId('pBlend').addEventListener('change', (e) => { layer.blendMode = e.target.value; scheduleRender(); pushHistory(); });
+  wireCollapsible('pAdvanced');
 }
 
 export function actionsHtml() {

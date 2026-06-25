@@ -1,7 +1,27 @@
 import { state, getSelected, MIN_SIZE } from '../core/state.js';
 import { clamp, deg2rad, rad2deg, rotVec } from '../core/utils.js';
-import { stage, dispScaleFactor, scheduleRender } from '../render/renderer.js';
+import { stage, dispScaleFactor, scheduleRender, applyViewportToStage } from '../render/renderer.js';
+import { viewport, resetViewport } from '../core/viewport.js';
 import { pushHistory } from '../core/history.js';
+
+const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
+
+export function applyZoom(factor, originX, originY) {
+  const oldZoom = viewport.zoom;
+  const newZoom = clamp(oldZoom * factor, ZOOM_MIN, ZOOM_MAX);
+  if (newZoom === oldZoom) return;
+  const rect = stage.getBoundingClientRect();
+  const fracX = (originX - rect.left) / rect.width;
+  const fracY = (originY - rect.top) / rect.height;
+  const oldW = rect.width, oldH = rect.height;
+  const newW = oldW * (newZoom / oldZoom);
+  const newH = oldH * (newZoom / oldZoom);
+  // Flexbox re-centers stage when size changes; adjust pan to keep cursor fixed
+  viewport.zoom = newZoom;
+  viewport.panX += (fracX - 0.5) * (oldW - newW);
+  viewport.panY += (fracY - 0.5) * (oldH - newH);
+  applyViewportToStage();
+}
 
 const selectionListeners = [];
 export function onSelectionChange(fn) {
@@ -44,6 +64,7 @@ function hitLayerAt(px, py) {
 
 let drag = null;
 const activeTouches = new Map(); // touch pointerId -> last known canvas-space {x,y}
+const screenTouches = new Map(); // touch pointerId -> last known screen-space {x,y}
 
 function handleAt(layer, px, py, ds) {
   const local = toLocal(layer, px, py);
@@ -61,11 +82,36 @@ function handleAt(layer, px, py, ds) {
   return null;
 }
 
+let _canvasPinchDist = 0;
+let _canvasPinchCenter = { x: 0, y: 0 };
+
 export function stageEventsInit() {
   stage.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerUp);
+
+  const area = document.getElementById('canvasArea');
+  area.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    applyZoom(factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  area.addEventListener('dblclick', (e) => {
+    if (e.target === area || e.target.id === 'canvasWrap') {
+      resetViewport();
+      applyViewportToStage();
+    }
+  });
+
+  const zoomResetBtn = document.getElementById('zoomReset');
+  if (zoomResetBtn) {
+    zoomResetBtn.addEventListener('click', () => {
+      resetViewport();
+      applyViewportToStage();
+    });
+  }
 }
 
 function onPointerDown(evt) {
@@ -75,14 +121,19 @@ function onPointerDown(evt) {
 
   if (evt.pointerType === 'touch') {
     activeTouches.set(evt.pointerId, p);
+    screenTouches.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
     if (activeTouches.size === 2) {
       const sel0 = getSelected();
+      const pts = [...activeTouches.values()];
       if (sel0 && sel0.visible && !sel0.locked) {
-        const pts = [...activeTouches.values()];
         const dist0 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
         drag = { kind: 'pinch', layer: sel0, dist0, w0: sel0.w, h0: sel0.h, cx0: sel0.x + sel0.w / 2, cy0: sel0.y + sel0.h / 2 };
       } else {
-        drag = null;
+        // No selected layer: two-finger gesture zooms/pans the canvas
+        const scrPts = [...screenTouches.values()];
+        _canvasPinchDist = Math.hypot(scrPts[1].x - scrPts[0].x, scrPts[1].y - scrPts[0].y);
+        _canvasPinchCenter = { x: (scrPts[0].x + scrPts[1].x) / 2, y: (scrPts[0].y + scrPts[1].y) / 2 };
+        drag = { kind: 'canvasPinch', zoom0: viewport.zoom, panX0: viewport.panX, panY0: viewport.panY };
       }
       return;
     }
@@ -126,6 +177,7 @@ function onPointerDown(evt) {
 function onPointerMove(evt) {
   if (evt.pointerType === 'touch' && activeTouches.has(evt.pointerId)) {
     activeTouches.set(evt.pointerId, projectCoords(evt));
+    screenTouches.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
   }
   if (!drag) return;
   evt.preventDefault();
@@ -148,6 +200,17 @@ function onPointerMove(evt) {
     layer.w = newW; layer.h = newH;
     layer.x = drag.cx0 - newW / 2;
     layer.y = drag.cy0 - newH / 2;
+  } else if (drag.kind === 'canvasPinch') {
+    const scrPts = [...screenTouches.values()];
+    if (scrPts.length < 2 || _canvasPinchDist < 1e-3) return;
+    const dist = Math.hypot(scrPts[1].x - scrPts[0].x, scrPts[1].y - scrPts[0].y);
+    const center = { x: (scrPts[0].x + scrPts[1].x) / 2, y: (scrPts[0].y + scrPts[1].y) / 2 };
+    const scaleFactor = dist / _canvasPinchDist;
+    viewport.zoom = clamp(drag.zoom0 * scaleFactor, ZOOM_MIN, ZOOM_MAX);
+    viewport.panX = drag.panX0 + (center.x - _canvasPinchCenter.x);
+    viewport.panY = drag.panY0 + (center.y - _canvasPinchCenter.y);
+    applyViewportToStage();
+    return;
   } else if (drag.kind === 'rotate') {
     const angle = Math.atan2(p.y - drag.cy, p.x - drag.cx);
     let deg = drag.startRotation + rad2deg(angle - drag.startAngle);
@@ -181,12 +244,17 @@ function onPointerMove(evt) {
 }
 
 function onPointerUp(evt) {
-  if (evt.pointerType === 'touch') activeTouches.delete(evt.pointerId);
+  if (evt.pointerType === 'touch') {
+    activeTouches.delete(evt.pointerId);
+    screenTouches.delete(evt.pointerId);
+  }
   if (!drag) return;
-  if (drag.kind === 'pinch' && activeTouches.size >= 2) return;
-  
+  if ((drag.kind === 'pinch' || drag.kind === 'canvasPinch') && activeTouches.size >= 2) return;
+
   const d = drag;
   drag = null;
+
+  if (d.kind === 'canvasPinch') return;
 
   if (d.kind === 'move' && !d.hasMoved) {
     d.layer.x = d.origX;

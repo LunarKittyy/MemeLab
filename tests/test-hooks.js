@@ -5,7 +5,8 @@
 
 import { state } from '../src/core/state.js';
 import { selectLayer } from '../src/interactions/pointer.js';
-import { stage } from '../src/render/renderer.js';
+import { stage, getViewportFitScale } from '../src/render/renderer.js';
+import { viewport } from '../src/core/viewport.js';
 
 window.__test = {
   getState() {
@@ -15,6 +16,9 @@ window.__test = {
     return state.selectedId;
   },
   selectLayer,
+  getViewport() {
+    return { ...viewport, fitScale: getViewportFitScale() };
+  },
   layerScreenRect(id) {
     const l = id === null ? null : state.layers.find((x) => x.id === id);
     if (!l) return null;

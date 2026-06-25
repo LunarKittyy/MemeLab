@@ -25,6 +25,7 @@ export function defaultTextLayer() {
     bold: false, italic: false, lineHeight: 1.15, letterSpacing: 0, padding: 14,
     stroke: { enabled: true, color: '#000000', width: strokeW },
     box: { enabled: false, mode: 'color', color: '#ffffff', amount: 16 },
+    blendMode: 'normal',
   };
 }
 
@@ -43,6 +44,7 @@ export function defaultImageLayer(src, naturalW, naturalH) {
     src, naturalW, naturalH, flipX: false, flipY: false,
     exposure: 0,
     crop: { x: 0, y: 0, w: 1, h: 1 },
+    blendMode: 'normal',
   };
 }
 
@@ -55,6 +57,7 @@ export function defaultRectLayer() {
     w: size, h: size, rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: false,
     mode: 'color', amount: 16,
     color: '#FF3D8A', radius: 0, strokeWidth: 0, strokeColor: '#000000',
+    blendMode: 'normal',
   };
 }
 

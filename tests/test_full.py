@@ -47,10 +47,18 @@ def make_sample_image():
     img.save(SAMPLE_IMG)
 
 
+def launch_browser(p):
+    # Use pre-installed Chromium to avoid version mismatch
+    chromium_path = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
+    if os.path.exists(chromium_path):
+        return p.chromium.launch(executable_path=chromium_path, args=['--no-sandbox'])
+    return p.chromium.launch(args=['--no-sandbox'])
+
+
 def run():
     make_sample_image()
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = launch_browser(p)
 
         ctx = browser.new_context(viewport={"width": 1400, "height": 900})
         page = ctx.new_page()
@@ -243,8 +251,7 @@ def run():
         check("censor-shape: default mode is 'color'", (rect_layer.get("mode") or "color") == "color")
 
         # Export at 1x with color mode as baseline.
-        page_box.evaluate("document.getElementById('exportScale').value = '1'")
-        page_box.evaluate("document.getElementById('exportScale').dispatchEvent(new Event('change'))")
+        page_box.evaluate("document.getElementById('exportScale').dataset.value = '1'")
         page_box.wait_for_timeout(100)
         with page_box.expect_download() as dl_color:
             page_box.click("#btnExport")
@@ -309,17 +316,17 @@ def run():
 
         # ---- layer preview thumbnails regression test ----
         preview_check = page.evaluate("""() => {
-            const canvas = document.querySelector('.layerrow .layer-preview canvas.thumb-canvas');
+            const img = document.querySelector('.layerrow .layer-preview img.thumb-img');
             const badge = document.querySelector('.layerrow .layer-preview .mini-typebadge');
             return {
-                hasCanvas: !!canvas,
+                hasImg: !!img,
                 hasBadge: !!badge,
-                canvasAttrId: canvas ? canvas.getAttribute('data-id') : null
+                imgAttrId: img ? img.getAttribute('data-id') : null
             };
         }""")
-        check("layer-preview: thumb-canvas exists in row", preview_check["hasCanvas"])
+        check("layer-preview: thumb-img exists in row", preview_check["hasImg"])
         check("layer-preview: mini-typebadge exists in row", preview_check["hasBadge"])
-        check("layer-preview: thumb-canvas has valid layer data-id", preview_check["canvasAttrId"] is not None)
+        check("layer-preview: thumb-img has valid layer data-id", preview_check["imgAttrId"] is not None)
 
         ctx.close()
 
@@ -349,6 +356,60 @@ def run():
         page3.wait_for_timeout(500)
         check("production index.html (no test hooks) boots clean", len(errors3) == 0, str(errors3))
         ctx3.close()
+
+        # ---- Section 2: canvas zoom & pan ----
+        ctx_zoom = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_zoom = ctx_zoom.new_page()
+        errors_zoom = []
+        page_zoom.on("pageerror", lambda exc: errors_zoom.append(str(exc)))
+        page_zoom.goto(TEST_URL)
+        page_zoom.wait_for_timeout(500)
+        check("zoom: boots clean", len(errors_zoom) == 0, str(errors_zoom))
+
+        vp0 = page_zoom.evaluate("window.__test.getViewport()")
+        check("zoom: initial zoom is 1", vp0["zoom"] == 1)
+        check("zoom: initial pan is 0,0", vp0["panX"] == 0 and vp0["panY"] == 0)
+        check("zoom: fitScale is positive", vp0["fitScale"] > 0)
+
+        # Scroll-wheel zoom — must hover canvas area first
+        ca_box = page_zoom.evaluate("""() => {
+            const r = document.getElementById('canvasArea').getBoundingClientRect();
+            return { cx: r.left + r.width/2, cy: r.top + r.height/2 };
+        }""")
+        cx_ca, cy_ca = ca_box["cx"], ca_box["cy"]
+        page_zoom.mouse.move(cx_ca, cy_ca)
+        page_zoom.mouse.wheel(0, -300)
+        page_zoom.wait_for_timeout(100)
+        vp1 = page_zoom.evaluate("window.__test.getViewport()")
+        check("zoom: scroll-wheel zoom-in increases zoom", vp1["zoom"] > 1.0,
+              f"zoom={vp1['zoom']}")
+        check("zoom: scroll-wheel no page errors", len(errors_zoom) == 0, str(errors_zoom))
+
+        # Reset via button
+        page_zoom.click("#zoomReset")
+        page_zoom.wait_for_timeout(100)
+        vp2 = page_zoom.evaluate("window.__test.getViewport()")
+        check("zoom: reset button restores zoom to 1", vp2["zoom"] == 1)
+        check("zoom: reset button zeroes pan", vp2["panX"] == 0 and vp2["panY"] == 0)
+
+        # Undo should NOT revert zoom (viewport is not in history)
+        page_zoom.click("#btnAddText")
+        page_zoom.wait_for_timeout(150)
+        # Zoom in
+        page_zoom.mouse.move(cx_ca, cy_ca)
+        page_zoom.mouse.wheel(0, -300)
+        page_zoom.wait_for_timeout(100)
+        vp_after_zoom = page_zoom.evaluate("window.__test.getViewport()")
+        zoom_before_undo = vp_after_zoom["zoom"]
+        page_zoom.click("#btnUndo")
+        page_zoom.wait_for_timeout(100)
+        vp_after_undo = page_zoom.evaluate("window.__test.getViewport()")
+        check("zoom: undo does not affect viewport zoom",
+              abs(vp_after_undo["zoom"] - zoom_before_undo) < 0.001,
+              f"{zoom_before_undo} -> {vp_after_undo['zoom']}")
+
+        check("zoom: no errors throughout", len(errors_zoom) == 0, str(errors_zoom))
+        ctx_zoom.close()
 
         browser.close()
 

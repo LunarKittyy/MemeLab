@@ -64,6 +64,7 @@ function applyLoadedSnapshot(snap) {
     if (l.type === 'text' && l.sizeScale === undefined && l.size && l.h) {
       l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
     }
+    if (l.blendMode === undefined) l.blendMode = 'normal';
   });
   state.selectedId = null;
   reconcileIdsAndCounters();
