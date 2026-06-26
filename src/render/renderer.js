@@ -86,7 +86,7 @@ function drawLayer(ctx, layer, backdrop) {
     ctx.save();
     ctx.globalCompositeOperation = layer.blendMode || 'normal';
     ctx.globalAlpha = clamp(layer.opacity, 0, 1);
-    const srcCanvas = _bakeSourceForDrawLayer(layer);
+    const srcCanvas = bakeSourceForDrawLayer(layer);
     const off = document.createElement('canvas');
     off.width = state.width; off.height = state.height;
     const offCtx = off.getContext('2d');
@@ -322,7 +322,7 @@ function drawSelectionOverlay(ctx) {
  * Bake all layers below the given draw layer (plus the background) into a flat source canvas.
  * This is used by retouch tools (heal, clone, dodge/burn, liquify) to sample from the underlying image.
  */
-function _bakeSourceForDrawLayer(targetLayer) {
+export function bakeSourceForDrawLayer(targetLayer) {
   // Use transient cached canvas if available (set by drawTools.js during an active stroke)
   if (state._healSourceCanvas) return state._healSourceCanvas;
 
@@ -766,7 +766,7 @@ function renderThumbToDataURL(id) {
         const thumbScale = w / state.width;
         ctx.scale(thumbScale, thumbScale);
         ctx.globalAlpha = clamp(layer.opacity, 0, 1);
-        const srcCanvas = _bakeSourceForDrawLayer(layer);
+        const srcCanvas = bakeSourceForDrawLayer(layer);
         const off = document.createElement('canvas');
         off.width = state.width; off.height = state.height;
         const offCtx = off.getContext('2d');

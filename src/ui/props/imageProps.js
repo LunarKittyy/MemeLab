@@ -535,11 +535,17 @@ function wireAdjSliders(layer) {
 
   // ── Dynamic scalar sliders (added via picker) ──
   const scalarIds = {
-    aiHighl:  'highlights',
-    aiShad:   'shadows',
-    aiVibr:   'vibrance',
-    aiTemp:   'temperature',
-    aiTint:   'tint',
+    aiHighl:    'highlights',
+    aiShad:     'shadows',
+    aiVibr:     'vibrance',
+    aiTemp:     'temperature',
+    aiTint:     'tint',
+    aiVignette: 'vignette',
+    aiClarity:  'clarity',
+    aiSharpen:  'sharpen',
+    aiDehaze:   'dehaze',
+    aiNR:       'noise_reduction',
+    aiGrain:    'grain',
   };
   for (const [id, type] of Object.entries(scalarIds)) {
     const el = byId(id);
@@ -641,6 +647,36 @@ function wireAdjSliders(layer) {
       });
       el.addEventListener('change', () => pushHistory());
     }
+  }
+
+  // ── Split-tone sliders ──
+  const stSliderDefs = [
+    { id: 'aiStHHue', field: 'highlightHue' },
+    { id: 'aiStHSat', field: 'highlightSat' },
+    { id: 'aiStSHue', field: 'shadowHue' },
+    { id: 'aiStSSat', field: 'shadowSat' },
+    { id: 'aiStBal',  field: 'balance' },
+  ];
+  for (const { id, field } of stSliderDefs) {
+    const el = byId(id);
+    if (!el) continue;
+    el.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      const valEl = byId(id + 'val');
+      if (valEl) valEl.textContent = v;
+
+      let adj = layer.adjustments.find(a => a.type === 'split_tone');
+      if (adj) {
+        adj[field] = v;
+      } else {
+        const entry = { type: 'split_tone', highlightHue: 0, highlightSat: 0, shadowHue: 0, shadowSat: 0, balance: 0 };
+        entry[field] = v;
+        layer.adjustments.push(entry);
+      }
+      clearAdjustCache();
+      scheduleRender();
+    });
+    el.addEventListener('change', () => pushHistory());
   }
 
   // ── Remove buttons ──

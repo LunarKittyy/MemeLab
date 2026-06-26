@@ -9,7 +9,7 @@
  */
 
 import { state, getSelected, drawState } from '../core/state.js';
-import { stage, stageCtx, scheduleRender, dispScaleFactor } from '../render/renderer.js';
+import { stage, stageCtx, scheduleRender, dispScaleFactor, bakeSourceForDrawLayer } from '../render/renderer.js';
 import { pushHistory } from '../core/history.js';
 import { invalidateDrawCache, paintStroke, rasterizeStrokes } from '../render/drawLayer.js';
 
@@ -71,6 +71,83 @@ export function drawToolsPointerDown(evt) {
     return;
   }
 
+  const retouchTools = ['heal', 'clone', 'dodge', 'burn', 'redeye', 'liquify'];
+  if (retouchTools.includes(tool) && !state._healSourceCanvas) {
+    state._healSourceCanvas = bakeSourceForDrawLayer(layer);
+  }
+
+  if (tool === 'heal') {
+    _activeStroke = {
+      tool,
+      points: [[p.x, p.y]],
+      size: drawState.brushSize,
+    };
+    ensureOverlay(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
+    renderLivePreview(layer);
+    return;
+  }
+
+  if (tool === 'clone') {
+    if (evt.altKey) {
+      state.cloneStampSource = { x: p.x, y: p.y };
+      scheduleRender();
+      return;
+    }
+    const src = state.cloneStampSource || { x: p.x, y: p.y };
+    _activeStroke = {
+      tool,
+      points: [[p.x, p.y]],
+      size: drawState.brushSize,
+      opacity: drawState.brushOpacity,
+      sourceX: src.x,
+      sourceY: src.y,
+    };
+    ensureOverlay(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
+    renderLivePreview(layer);
+    return;
+  }
+
+  if (tool === 'dodge' || tool === 'burn') {
+    _activeStroke = {
+      tool,
+      points: [[p.x, p.y]],
+      size: drawState.brushSize,
+      exposure: drawState.exposure != null ? drawState.exposure : 0.5,
+    };
+    ensureOverlay(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
+    renderLivePreview(layer);
+    return;
+  }
+
+  if (tool === 'redeye') {
+    _activeStroke = {
+      tool,
+      cx: p.x,
+      cy: p.y,
+      radius: drawState.brushSize / 2,
+    };
+    ensureOverlay(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
+    renderLivePreview(layer);
+    return;
+  }
+
+  if (tool === 'liquify') {
+    _activeStroke = {
+      tool,
+      points: [[p.x, p.y, 0, 0]],
+      size: drawState.brushSize,
+      strength: drawState.liquifyStrength != null ? drawState.liquifyStrength : 0.5,
+    };
+    ensureOverlay(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
+    renderLivePreview(layer);
+    return;
+  }
+
   // For drawing tools begin an active stroke
   if (tool === 'brush' || tool === 'eraser') {
     _activeStroke = {
@@ -83,7 +160,7 @@ export function drawToolsPointerDown(evt) {
     };
     ensureOverlay(layer);
     // Render committed strokes into the pre-fill bitmap
-    _committedBitmap = rasterizeStrokes(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
     renderLivePreview(layer);
     return;
   }
@@ -99,7 +176,7 @@ export function drawToolsPointerDown(evt) {
       x1: p.x, y1: p.y, x2: p.x, y2: p.y,
     };
     ensureOverlay(layer);
-    _committedBitmap = rasterizeStrokes(layer);
+    _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
     renderLivePreview(layer);
     return;
   }
@@ -117,7 +194,7 @@ export function drawToolsPointerDown(evt) {
         _lastX: p.x, _lastY: p.y,
       };
       ensureOverlay(layer);
-      _committedBitmap = rasterizeStrokes(layer);
+      _committedBitmap = rasterizeStrokes(layer, state._healSourceCanvas);
     } else if (_activeStroke.tool === 'polygon') {
       // Check for double-click (close polygon)
       const last = _activeStroke.vertices[_activeStroke.vertices.length - 1];
@@ -142,7 +219,7 @@ export function drawToolsPointerMove(evt) {
   const p = projectCoords(evt);
   const tool = _activeStroke.tool;
 
-  if (tool === 'brush' || tool === 'eraser') {
+  if (tool === 'brush' || tool === 'eraser' || tool === 'heal' || tool === 'clone' || tool === 'dodge' || tool === 'burn') {
     _activeStroke.points.push([p.x, p.y, evt.pressure || 0.5]);
     renderLivePreview(layer);
   } else if (tool === 'line' || tool === 'ellipse' || tool === 'gradient') {
@@ -152,6 +229,12 @@ export function drawToolsPointerMove(evt) {
   } else if (tool === 'polygon') {
     _activeStroke._lastX = p.x;
     _activeStroke._lastY = p.y;
+    renderLivePreview(layer);
+  } else if (tool === 'liquify') {
+    const startPt = _activeStroke.points[0];
+    const dx = p.x - startPt[0];
+    const dy = p.y - startPt[1];
+    _activeStroke.points.push([p.x, p.y, dx, dy]);
     renderLivePreview(layer);
   }
 }
@@ -196,7 +279,21 @@ function commitStroke(layer) {
   _activeStroke = null;
   _committedBitmap = null;
   clearOverlay();
-  pushHistory('Brush stroke');
+  const labelMap = {
+    brush: 'Brush stroke',
+    eraser: 'Eraser stroke',
+    line: 'Line stroke',
+    ellipse: 'Ellipse stroke',
+    polygon: 'Polygon stroke',
+    gradient: 'Gradient fill',
+    heal: 'Healing brush',
+    clone: 'Clone stamp',
+    dodge: 'Dodge stroke',
+    burn: 'Burn stroke',
+    redeye: 'Red-eye correction',
+    liquify: 'Liquify stroke',
+  };
+  pushHistory(labelMap[stroke.tool] || 'Brush stroke');
   scheduleRender();
   // Refresh props panel stroke count
   const body = document.getElementById('propsBody');
@@ -255,7 +352,7 @@ function renderLivePreview(layer) {
     _overlayCtx.stroke();
     _overlayCtx.restore();
   } else {
-    paintStroke(_overlayCtx, stroke, w, h);
+    paintStroke(_overlayCtx, stroke, w, h, state._healSourceCanvas);
   }
 }
 
@@ -444,7 +541,7 @@ export function updateCursor() {
   if (!stage) return;
   if (tool === 'select' || !tool) {
     stage.style.cursor = '';
-  } else if (tool === 'eyedropper') {
+  } else if (tool === 'eyedropper' || tool === 'clone' || tool === 'heal' || tool === 'dodge' || tool === 'burn' || tool === 'redeye' || tool === 'liquify') {
     stage.style.cursor = 'crosshair';
   } else if (tool === 'bucket') {
     stage.style.cursor = 'cell';
@@ -481,4 +578,19 @@ export function abortActiveStroke() {
     _committedBitmap = null;
     clearOverlay();
   }
+}
+
+export const drawToolState = {
+  get cloneSource() {
+    return state.cloneStampSource;
+  },
+  set cloneSource(val) {
+    state.cloneStampSource = val;
+  }
+};
+
+export function onRetouchToolActivated(toolName, targetLayer) {
+  const layer = targetLayer || getActiveDrawLayer();
+  if (!layer) return;
+  state._healSourceCanvas = bakeSourceForDrawLayer(layer);
 }

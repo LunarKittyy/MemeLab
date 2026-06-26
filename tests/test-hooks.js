@@ -15,6 +15,7 @@ window.__test = {
     const s = JSON.parse(JSON.stringify({
       width: state.width, height: state.height,
       background: state.background, layers: state.layers, selectedId: state.selectedId,
+      straighten: state.straighten,
     }));
     s.selectedIds = [...state.selectedIds];
     s.showGrid = state.showGrid; s.showRulers = state.showRulers;

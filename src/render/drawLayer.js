@@ -29,7 +29,7 @@ export function invalidateAllDrawCaches() {
  * Paint a single stroke onto an existing 2D canvas context.
  * The context must already be set up (cleared or composited as needed by caller).
  */
-export function paintStroke(ctx, stroke, w, h) {
+export function paintStroke(ctx, stroke, w, h, srcCanvas) {
   ctx.save();
   const tool = stroke.tool || 'brush';
 
@@ -128,13 +128,204 @@ export function paintStroke(ctx, stroke, w, h) {
       ctx.globalAlpha = stroke.opacity != null ? stroke.opacity : 1;
       ctx.putImageData(id, stroke.fx, stroke.fy);
     }
+  } else if (tool === 'heal') {
+    const pts = stroke.points || [];
+    if (pts.length === 0 || !srcCanvas) { ctx.restore(); return; }
+    const r = Math.max(1, stroke.size || 20);
+    const allPts = pts.length === 1 ? [pts[0], pts[0]] : pts;
+
+    for (let i = 0; i < allPts.length; i++) {
+      const [x, y] = allPts[i];
+      const temp = document.createElement('canvas');
+      temp.width = r * 2; temp.height = r * 2;
+      const tCtx = temp.getContext('2d');
+
+      const sx = x - r * 1.5;
+      const sy = y - r * 1.5;
+
+      tCtx.drawImage(srcCanvas, sx - r, sy - r, r * 2, r * 2, 0, 0, r * 2, r * 2);
+
+      tCtx.globalCompositeOperation = 'destination-in';
+      const grad = tCtx.createRadialGradient(r, r, 0, r, r, r);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.5, 'rgba(0,0,0,0.8)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      tCtx.fillStyle = grad;
+      tCtx.fillRect(0, 0, r * 2, r * 2);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(temp, x - r, y - r);
+      ctx.restore();
+    }
+  } else if (tool === 'clone') {
+    const pts = stroke.points || [];
+    if (pts.length === 0 || !srcCanvas) { ctx.restore(); return; }
+    const r = Math.max(1, stroke.size || 20);
+    const allPts = pts.length === 1 ? [pts[0], pts[0]] : pts;
+    const startX = allPts[0][0];
+    const startY = allPts[0][1];
+    const sourceX = stroke.sourceX != null ? stroke.sourceX : startX;
+    const sourceY = stroke.sourceY != null ? stroke.sourceY : startY;
+
+    for (let i = 0; i < allPts.length; i++) {
+      const [x, y] = allPts[i];
+      const dx = x - startX;
+      const dy = y - startY;
+      const sx = sourceX + dx;
+      const sy = sourceY + dy;
+
+      const temp = document.createElement('canvas');
+      temp.width = r * 2; temp.height = r * 2;
+      const tCtx = temp.getContext('2d');
+
+      tCtx.drawImage(srcCanvas, sx - r, sy - r, r * 2, r * 2, 0, 0, r * 2, r * 2);
+
+      tCtx.globalCompositeOperation = 'destination-in';
+      const grad = tCtx.createRadialGradient(r, r, 0, r, r, r);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.7, 'rgba(0,0,0,0.9)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      tCtx.fillStyle = grad;
+      tCtx.fillRect(0, 0, r * 2, r * 2);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = stroke.opacity != null ? stroke.opacity : 1;
+      ctx.drawImage(temp, x - r, y - r);
+      ctx.restore();
+    }
+  } else if (tool === 'dodge' || tool === 'burn') {
+    const pts = stroke.points || [];
+    if (pts.length === 0) { ctx.restore(); return; }
+    const r = Math.max(1, stroke.size || 20);
+    const exposure = stroke.exposure != null ? stroke.exposure : 0.5;
+    const allPts = pts.length === 1 ? [pts[0], pts[0]] : pts;
+
+    for (let i = 0; i < allPts.length; i++) {
+      const [x, y] = allPts[i];
+      const temp = document.createElement('canvas');
+      temp.width = r * 2; temp.height = r * 2;
+      const tCtx = temp.getContext('2d');
+
+      const imgData = getBaseRegion(ctx, srcCanvas, x - r, y - r, r * 2, r * 2);
+      const data = imgData.data;
+
+      for (let j = 0; j < data.length; j += 4) {
+        if (tool === 'dodge') {
+          data[j]     = data[j]     + exposure * (255 - data[j]);
+          data[j + 1] = data[j + 1] + exposure * (255 - data[j + 1]);
+          data[j + 2] = data[j + 2] + exposure * (255 - data[j + 2]);
+        } else {
+          data[j]     = data[j]     * (1 - exposure);
+          data[j + 1] = data[j + 1] * (1 - exposure);
+          data[j + 2] = data[j + 2] * (1 - exposure);
+        }
+        data[j + 3] = 255;
+      }
+      tCtx.putImageData(imgData, 0, 0);
+
+      tCtx.globalCompositeOperation = 'destination-in';
+      const grad = tCtx.createRadialGradient(r, r, 0, r, r, r);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.5, 'rgba(0,0,0,0.8)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      tCtx.fillStyle = grad;
+      tCtx.fillRect(0, 0, r * 2, r * 2);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(temp, x - r, y - r);
+      ctx.restore();
+    }
+  } else if (tool === 'redeye') {
+    const cx = stroke.cx;
+    const cy = stroke.cy;
+    const r = stroke.radius || 20;
+
+    const temp = document.createElement('canvas');
+    temp.width = r * 2; temp.height = r * 2;
+    const tCtx = temp.getContext('2d');
+
+    const imgData = getBaseRegion(ctx, srcCanvas, cx - r, cy - r, r * 2, r * 2);
+    const data = imgData.data;
+
+    for (let j = 0; j < data.length; j += 4) {
+      const red = data[j];
+      const green = data[j + 1];
+      const blue = data[j + 2];
+      if (red > 80 && red > green * 1.5 && red > blue * 1.5) {
+        data[j] = (green + blue) / 2;
+      }
+      data[j + 3] = 255;
+    }
+    tCtx.putImageData(imgData, 0, 0);
+
+    tCtx.globalCompositeOperation = 'destination-in';
+    const grad = tCtx.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.8, 'rgba(0,0,0,0.8)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    tCtx.fillStyle = grad;
+    tCtx.fillRect(0, 0, r * 2, r * 2);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(temp, cx - r, cy - r);
+    ctx.restore();
+  } else if (tool === 'liquify') {
+    const pts = stroke.points || [];
+    if (pts.length === 0) { ctx.restore(); return; }
+    const r = Math.max(1, stroke.size || 20);
+    const strength = stroke.strength != null ? stroke.strength : 0.5;
+
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i];
+      const px = pt[0], py = pt[1], dx = pt[2] || 0, dy = pt[3] || 0;
+      if (Math.hypot(dx, dy) < 0.1) continue;
+
+      const imgData = getBaseRegion(ctx, srcCanvas, px - r, py - r, r * 2, r * 2);
+      const outData = ctx.createImageData(r * 2, r * 2);
+
+      for (let iy = 0; iy < r * 2; iy++) {
+        for (let ix = 0; ix < r * 2; ix++) {
+          const dist = Math.hypot(ix - r, iy - r);
+          const outIdx = (iy * r * 2 + ix) * 4;
+          if (dist < r) {
+            const w_warp = Math.pow(1 - dist / r, 2);
+            const sx = ix - dx * strength * w_warp;
+            const sy = iy - dy * strength * w_warp;
+            const [sr, sg, sb, sa] = sampleBilinear(imgData, sx, sy, r * 2, r * 2);
+            outData.data[outIdx]     = sr;
+            outData.data[outIdx + 1] = sg;
+            outData.data[outIdx + 2] = sb;
+            outData.data[outIdx + 3] = sa;
+          } else {
+            outData.data[outIdx]     = imgData.data[outIdx];
+            outData.data[outIdx + 1] = imgData.data[outIdx + 1];
+            outData.data[outIdx + 2] = imgData.data[outIdx + 2];
+            outData.data[outIdx + 3] = imgData.data[outIdx + 3];
+          }
+        }
+      }
+      
+      const temp = document.createElement('canvas');
+      temp.width = r * 2; temp.height = r * 2;
+      const tCtx = temp.getContext('2d');
+      tCtx.putImageData(outData, 0, 0);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(temp, px - r, py - r);
+      ctx.restore();
+    }
   }
 
   ctx.restore();
 }
 
 /** Rasterize all committed strokes for a layer, with cache. */
-export function rasterizeStrokes(layer) {
+export function rasterizeStrokes(layer, srcCanvas) {
   const strokes = layer.strokes || [];
   if (strokes.length === 0) return null;
 
@@ -151,7 +342,7 @@ export function rasterizeStrokes(layer) {
   ctx.clearRect(0, 0, w, h);
 
   for (const stroke of strokes) {
-    paintStroke(ctx, stroke, w, h);
+    paintStroke(ctx, stroke, w, h, srcCanvas);
   }
 
   _cache.set(layer.id, { bitmap: canvas, key });
@@ -162,16 +353,58 @@ export function rasterizeStrokes(layer) {
  * Main entry point called from renderer.js drawLayer().
  * ctx is already translated/scaled/alpha'd by the caller.
  */
-export function drawDrawLayer(ctx, layer) {
+export function drawDrawLayer(ctx, layer, srcCanvas) {
   const strokes = layer.strokes || [];
   if (strokes.length === 0) return;
-  const bmp = rasterizeStrokes(layer);
+  const bmp = rasterizeStrokes(layer, srcCanvas);
   if (!bmp) return;
   ctx.drawImage(bmp, 0, 0, layer.w, layer.h);
 }
 
-export function rasterizeDrawLayer(ctx, layer, _srcCanvas) {
-  drawDrawLayer(ctx, layer);
+export function rasterizeDrawLayer(ctx, layer, srcCanvas) {
+  drawDrawLayer(ctx, layer, srcCanvas);
+}
+
+// ---- Helper functions for retouching ----
+
+function getBaseRegion(ctx, srcCanvas, rx, ry, rw, rh) {
+  const canvas = document.createElement('canvas');
+  canvas.width = rw; canvas.height = rh;
+  const cCtx = canvas.getContext('2d');
+  cCtx.clearRect(0, 0, rw, rh);
+
+  // Draw from srcCanvas first
+  if (srcCanvas) {
+    cCtx.drawImage(srcCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+  }
+  // Draw current ctx on top
+  cCtx.drawImage(ctx.canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+
+  return cCtx.getImageData(0, 0, rw, rh);
+}
+
+function sampleBilinear(imgData, x, y, w, h) {
+  const x0 = Math.max(0, Math.min(w - 2, Math.floor(x)));
+  const y0 = Math.max(0, Math.min(h - 2, Math.floor(y)));
+  const x1 = x0 + 1;
+  const y1 = y0 + 1;
+
+  const tx = x - x0;
+  const ty = y - y0;
+
+  const idx00 = (y0 * w + x0) * 4;
+  const idx10 = (y0 * w + x1) * 4;
+  const idx01 = (y1 * w + x0) * 4;
+  const idx11 = (y1 * w + x1) * 4;
+
+  const data = imgData.data;
+
+  const r = (1 - tx) * (1 - ty) * data[idx00] + tx * (1 - ty) * data[idx10] + (1 - tx) * ty * data[idx01] + tx * ty * data[idx11];
+  const g = (1 - tx) * (1 - ty) * data[idx00 + 1] + tx * (1 - ty) * data[idx10 + 1] + (1 - tx) * ty * data[idx01 + 1] + tx * ty * data[idx11 + 1];
+  const b = (1 - tx) * (1 - ty) * data[idx00 + 2] + tx * (1 - ty) * data[idx10 + 2] + (1 - tx) * ty * data[idx01 + 2] + tx * ty * data[idx11 + 2];
+  const a = (1 - tx) * (1 - ty) * data[idx00 + 3] + tx * (1 - ty) * data[idx10 + 3] + (1 - tx) * ty * data[idx01 + 3] + tx * ty * data[idx11 + 3];
+
+  return [r, g, b, a];
 }
 
 // ---- Utility ----
