@@ -513,6 +513,173 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Track K: Filter presets ----
+        ctx_fp = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_fp = ctx_fp.new_page()
+        errors_fp = []
+        page_fp.on("pageerror", lambda exc: errors_fp.append(str(exc)))
+        page_fp.goto(TEST_URL)
+        page_fp.wait_for_timeout(500)
+
+        # Add an image layer.
+        with page_fp.expect_file_chooser() as fc_fp:
+            page_fp.click("#iconAddImage")
+        fc_fp.value.set_files(SAMPLE_IMG)
+        page_fp.wait_for_timeout(500)
+        st_fp = page_fp.evaluate("window.__test.getState()")
+        fp_img = next(l for l in st_fp["layers"] if l["type"] == "image")
+        fp_img_id = fp_img["id"]
+
+        # Select the image layer so props panel renders.
+        page_fp.evaluate("(id) => window.__test.selectLayer(id)", fp_img_id)
+        page_fp.wait_for_timeout(300)
+
+        # Filter strip must be visible (not behind a collapsible).
+        strip_visible = page_fp.evaluate("""() => {
+            const strip = document.getElementById('filterStrip');
+            if (!strip) return false;
+            const rect = strip.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }""")
+        check("fp: filter strip is visible (not collapsed)", strip_visible)
+
+        # There must be chips for None and noir at minimum.
+        chips_exist = page_fp.evaluate("""() => {
+            const none = document.querySelector('.filter-chip[data-preset-id="none"]');
+            const noir = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            return !!(none && noir);
+        }""")
+        check("fp: None and noir chips exist in strip", chips_exist)
+
+        # Click the noir chip and verify adjustments.
+        page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            if (chip) chip.click();
+        }""")
+        page_fp.wait_for_timeout(200)
+        st_fp2 = page_fp.evaluate("window.__test.getState()")
+        fp_img2 = next(l for l in st_fp2["layers"] if l["id"] == fp_img_id)
+        adjs2 = fp_img2.get("adjustments", [])
+        noir_bright = next((a for a in adjs2 if a["type"] == "brightness"), None)
+        noir_contr  = next((a for a in adjs2 if a["type"] == "contrast"), None)
+        noir_sat    = next((a for a in adjs2 if a["type"] == "saturation"), None)
+        check("fp: noir sets brightness=5",
+              noir_bright is not None and noir_bright["value"] == 5,
+              str(adjs2))
+        check("fp: noir sets contrast=40",
+              noir_contr is not None and noir_contr["value"] == 40,
+              str(adjs2))
+        check("fp: noir sets saturation=-80",
+              noir_sat is not None and noir_sat["value"] == -80,
+              str(adjs2))
+
+        # noir chip should be visually marked active.
+        noir_active = page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            return chip ? chip.classList.contains('active') : false;
+        }""")
+        check("fp: noir chip has active class after applying", noir_active)
+
+        # getActivePresetId via JS should return 'noir'.
+        active_id_via_js = page_fp.evaluate("""async () => {
+            const { getActivePresetId } = await import('../src/presets/filters.js');
+            const { state } = await import('../src/core/state.js');
+            const layer = state.layers.find(l => l.type === 'image');
+            return layer ? getActivePresetId(layer) : null;
+        }""")
+        check("fp: getActivePresetId returns 'noir' after applying noir",
+              active_id_via_js == 'noir', str(active_id_via_js))
+
+        # Export with noir applied — must succeed and differ from no-filter baseline.
+        page_fp.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_fp.wait_for_timeout(50)
+        with page_fp.expect_download() as dl_fp_noir:
+            page_fp.click("#btnExport")
+        noir_export_path = os.path.join(OUT_DIR, "fp_noir.png")
+        dl_fp_noir.value.save_as(noir_export_path)
+        import hashlib as _hashlib
+        fp_noir_img = Image.open(noir_export_path)
+        check("fp: noir export is a valid PNG", fp_noir_img.size[0] > 0)
+
+        # Undo — adjustments must revert to empty (no filter).
+        page_fp.click("#btnUndo")
+        page_fp.wait_for_timeout(200)
+        st_fp3 = page_fp.evaluate("window.__test.getState()")
+        fp_img3 = next(l for l in st_fp3["layers"] if l["id"] == fp_img_id)
+        check("fp: undo after applying noir reverts adjustments",
+              len(fp_img3.get("adjustments", [])) == 0,
+              str(fp_img3.get("adjustments")))
+
+        # Re-apply noir; then click None chip → adjustments must clear.
+        page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            if (chip) chip.click();
+        }""")
+        page_fp.wait_for_timeout(150)
+        page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="none"]');
+            if (chip) chip.click();
+        }""")
+        page_fp.wait_for_timeout(150)
+        st_fp4 = page_fp.evaluate("window.__test.getState()")
+        fp_img4 = next(l for l in st_fp4["layers"] if l["id"] == fp_img_id)
+        check("fp: clicking None chip clears adjustments to []",
+              len(fp_img4.get("adjustments", [])) == 0,
+              str(fp_img4.get("adjustments")))
+
+        # After clearing, getActivePresetId must return 'none'.
+        active_after_clear = page_fp.evaluate("""async () => {
+            const { getActivePresetId } = await import('../src/presets/filters.js');
+            const { state } = await import('../src/core/state.js');
+            const layer = state.layers.find(l => l.type === 'image');
+            return layer ? getActivePresetId(layer) : null;
+        }""")
+        check("fp: getActivePresetId returns 'none' after clearing",
+              active_after_clear == 'none', str(active_after_clear))
+
+        # Apply noir again; then manually tweak brightness slider → active indicator clears.
+        page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            if (chip) chip.click();
+        }""")
+        page_fp.wait_for_timeout(150)
+
+        # Open the Adjustments collapsible first (it might be collapsed).
+        page_fp.evaluate("""() => {
+            const body = document.querySelector('#adjSection .collapsible-body');
+            if (body && body.style.display === 'none') {
+                document.querySelector('#adjSection .collapsible-hdr').click();
+            }
+        }""")
+        page_fp.wait_for_timeout(100)
+
+        # Tweak brightness slider to a different value.
+        page_fp.evaluate("""() => {
+            const sl = document.getElementById('aiBright');
+            if (!sl) return;
+            sl.value = '50';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+        }""")
+        page_fp.wait_for_timeout(100)
+        active_after_tweak = page_fp.evaluate("""async () => {
+            const { getActivePresetId } = await import('../src/presets/filters.js');
+            const { state } = await import('../src/core/state.js');
+            const layer = state.layers.find(l => l.type === 'image');
+            return layer ? getActivePresetId(layer) : null;
+        }""")
+        check("fp: getActivePresetId returns null after slider breaks preset match",
+              active_after_tweak is None, str(active_after_tweak))
+
+        noir_chip_still_active = page_fp.evaluate("""() => {
+            const chip = document.querySelector('.filter-chip[data-preset-id="noir"]');
+            return chip ? chip.classList.contains('active') : True;
+        }""")
+        check("fp: noir chip loses active class after slider tweak",
+              not noir_chip_still_active)
+
+        check("fp: no page errors throughout", len(errors_fp) == 0, str(errors_fp))
+        ctx_fp.close()
+
         browser.close()
 
 

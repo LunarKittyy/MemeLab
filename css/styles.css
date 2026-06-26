@@ -896,6 +896,62 @@ select option {
 .collapsible-hdr[aria-expanded="true"] .collapsible-chevron{transform:rotate(180deg);}
 .collapsible-body{padding-bottom:4px;}
 
+/* ---- Filter preset strip ---- */
+.filter-presets-section { padding-bottom: 8px; }
+.filter-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  /* Hide scrollbar on webkit while keeping it scrollable */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.filter-strip::-webkit-scrollbar { height: 3px; }
+.filter-strip::-webkit-scrollbar-track { background: transparent; }
+.filter-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-pill); }
+
+.filter-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.filter-chip:hover {
+  background: var(--panel-alt);
+  border-color: var(--border);
+}
+.filter-chip.active {
+  border-color: var(--accent);
+}
+.filter-chip img.filter-thumb {
+  width: 60px;
+  height: 60px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--panel-alt);
+  display: block;
+}
+.filter-label {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 62px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filter-chip.active .filter-label {
+  color: var(--accent);
+}
+
 /* ---- Zoom indicator ---- */
 .zoom-indicator{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
   display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.5);border-radius:var(--radius-pill);
