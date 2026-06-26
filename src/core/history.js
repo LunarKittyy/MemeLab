@@ -51,6 +51,8 @@ export function restoreSnapshot(snap) {
   state.background = clone.background;
   state.layers = clone.layers;
   state.selectedId = clone.selectedId;
+  // Multi-select is transient UI state — always reset on history restore
+  state.selectedIds = new Set(state.selectedId && state.selectedId !== 'background' ? [state.selectedId] : []);
   clearAdjustCache();
   if (state.background.src) ensureImage(state.background.src);
   state.layers.forEach((l) => {
