@@ -6,6 +6,8 @@ import { byId, rangeRow, transformHtml, actionsHtml, wireActions, collapsibleHtm
 import { renderPropsPanel } from './panel.js';
 import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
+import { getInpaintImpl } from '../../cutout/inpaint.js';
+import { upscaleImage } from '../../cutout/upscale.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
 
@@ -59,6 +61,16 @@ export function imagePropsHtml(layer) {
           <span class="icon" style="width:13px;height:13px;display:flex;align-items:center;">${ICONS.sparkles}</span>
           Remove background
         </button>
+      </div>
+      <div class="row">
+        <button class="smallbtn full" id="iGenFill" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+          <span class="icon" style="width:13px;height:13px;display:flex;align-items:center;">${ICONS.sparkles}</span>
+          Generative fill
+        </button>
+      </div>
+      <div class="row" style="align-items:center;gap:6px;">
+        <button class="smallbtn" id="iUpscale2x" style="flex:1;">Upscale 2×</button>
+        <button class="smallbtn" id="iUpscale4x" style="flex:1;">Upscale 4×</button>
       </div>
       <div id="aiProgress" style="display:none;">
         <div class="ai-progress-label" id="aiProgressLabel">Loading model…</div>
@@ -121,6 +133,13 @@ export function wireImageProps(layer) {
   // ---- AI background removal ----
   byId('iBgRemove').addEventListener('click', () => runBgRemoval(layer));
 
+  // ---- AI generative fill / object removal ----
+  byId('iGenFill').addEventListener('click', () => runGenerativeFill(layer));
+
+  // ---- AI upscale ----
+  byId('iUpscale2x').addEventListener('click', () => runUpscale(layer, 2));
+  byId('iUpscale4x').addEventListener('click', () => runUpscale(layer, 4));
+
   wireActions(layer);
 }
 
@@ -145,11 +164,22 @@ function showAiError(msg) {
   setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
 }
 
+/**
+ * Helper: disable all AI buttons, return a function that re-enables them.
+ */
+function lockAiButtons() {
+  const ids = ['iBgRemove', 'iGenFill', 'iUpscale2x', 'iUpscale4x'];
+  ids.forEach(id => { const b = byId(id); if (b) b.disabled = true; });
+  return function unlockAiButtons() {
+    ids.forEach(id => { const b = byId(id); if (b) b.disabled = false; });
+  };
+}
+
 async function runBgRemoval(layer) {
   const btn = byId('iBgRemove');
   if (!btn || btn.disabled) return;
 
-  btn.disabled = true;
+  const unlock = lockAiButtons();
   byId('aiError') && (byId('aiError').style.display = 'none');
 
   const img = ensureImage(layer.src);
@@ -227,6 +257,186 @@ async function runBgRemoval(layer) {
     showAiError('Failed: ' + (err.message || 'Unknown error'));
     hideProgress();
   } finally {
-    if (byId('iBgRemove')) byId('iBgRemove').disabled = false;
+    unlock();
+  }
+}
+
+/**
+ * Generative fill / object removal.
+ *
+ * Uses the layer's current mask (layer.mask.src, white = fill, black = preserve).
+ * After inpainting:
+ *   - The result is baked into layer.src (destructive, undoable via history).
+ *   - layer.mask is cleared.
+ */
+async function runGenerativeFill(layer) {
+  const btn = byId('iGenFill');
+  if (!btn || btn.disabled) return;
+
+  const unlock = lockAiButtons();
+  byId('aiError') && (byId('aiError').style.display = 'none');
+
+  // The mask must be enabled and have a src for us to know what region to fill.
+  if (!layer.mask?.enabled || !layer.mask?.src) {
+    showAiError('Enable and paint a mask first — the white region will be filled.');
+    unlock();
+    return;
+  }
+
+  const img = ensureImage(layer.src);
+  if (!img || !img.complete || !img.naturalWidth) {
+    showAiError('Image not loaded yet — try again in a moment.');
+    unlock();
+    return;
+  }
+
+  // Bake the image into a canvas.
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width  = img.naturalWidth;
+  srcCanvas.height = img.naturalHeight;
+  srcCanvas.getContext('2d').drawImage(img, 0, 0);
+
+  // Load the mask (layer.mask.src is a dataURL with R=G=B=255, A=gray).
+  // Convert back to luminance mask (R=G=B=gray, A=255) for the inpaint API.
+  const maskImg = ensureImage(layer.mask.src);
+  if (!maskImg || !maskImg.complete) {
+    showAiError('Mask not ready yet — try again.');
+    unlock();
+    return;
+  }
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width  = srcCanvas.width;
+  maskCanvas.height = srcCanvas.height;
+  const mCtx = maskCanvas.getContext('2d');
+  mCtx.drawImage(maskImg, 0, 0, maskCanvas.width, maskCanvas.height);
+  // Invert the alpha encoding back to luminance: white = fill, black = preserve.
+  const md = mCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+  for (let i = 0; i < md.data.length; i += 4) {
+    const lum = md.data[i + 3]; // alpha was gray
+    md.data[i] = md.data[i + 1] = md.data[i + 2] = lum;
+    md.data[i + 3] = 255;
+  }
+  mCtx.putImageData(md, 0, 0);
+
+  // Apply mask invert if set.
+  if (layer.mask.invert) {
+    const id2 = mCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    for (let i = 0; i < id2.data.length; i += 4) {
+      id2.data[i] = id2.data[i + 1] = id2.data[i + 2] = 255 - id2.data[i];
+    }
+    mCtx.putImageData(id2, 0, 0);
+  }
+
+  setProgress('Starting generative fill…', 0.05);
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  try {
+    const inpaintImpl = getInpaintImpl();
+    const resultCanvas = await inpaintImpl(srcCanvas, maskCanvas, (phase, pct) => {
+      if (phase === 'download') {
+        setProgress(`Downloading model… ${Math.round(pct * 100)}%`, pct * 0.7);
+      } else if (phase === 'init') {
+        setProgress('Initialising model…', 0.7 + pct * 0.15);
+      } else if (phase === 'inference') {
+        setProgress(pct < 1 ? 'Running AI…' : 'Processing result…', 0.85 + pct * 0.15);
+      } else if (phase === 'ready') {
+        setProgress('Ready', 1);
+      }
+    });
+
+    const currentLayer = getLayerById(layer.id);
+    if (!currentLayer) { hideProgress(); unlock(); return; }
+
+    setProgress('Applying result…', 1);
+
+    // Bake result into layer.src.
+    currentLayer.src = resultCanvas.toDataURL('image/png');
+    currentLayer.naturalW = resultCanvas.width;
+    currentLayer.naturalH = resultCanvas.height;
+    ensureImage(currentLayer.src);
+
+    // Clear mask — the fill is now baked in.
+    currentLayer.mask = { enabled: false, src: null, invert: false, feather: 0 };
+
+    renderPropsPanel();
+    scheduleRender();
+    pushHistory('Generative fill');
+    hideProgress();
+  } catch (err) {
+    console.error('Generative fill failed:', err);
+    showAiError('Failed: ' + (err.message || 'Unknown error'));
+    hideProgress();
+  } finally {
+    unlock();
+  }
+}
+
+/**
+ * AI upscale for a single image layer.
+ *
+ * The upscaled image replaces layer.src / naturalW / naturalH.
+ * The display size (layer.w, layer.h) is NOT changed — more pixels, same size.
+ *
+ * @param {object} layer  - The image layer.
+ * @param {2|4}    factor - Upscale factor.
+ */
+async function runUpscale(layer, factor) {
+  const btnId = factor === 2 ? 'iUpscale2x' : 'iUpscale4x';
+  const btn = byId(btnId);
+  if (!btn || btn.disabled) return;
+
+  const unlock = lockAiButtons();
+  byId('aiError') && (byId('aiError').style.display = 'none');
+
+  const img = ensureImage(layer.src);
+  if (!img || !img.complete || !img.naturalWidth) {
+    showAiError('Image not loaded yet — try again in a moment.');
+    unlock();
+    return;
+  }
+
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width  = img.naturalWidth;
+  srcCanvas.height = img.naturalHeight;
+  srcCanvas.getContext('2d').drawImage(img, 0, 0);
+
+  setProgress(`Starting ${factor}× upscale…`, 0.05);
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  try {
+    const resultCanvas = await upscaleImage(srcCanvas, factor, (phase, pct) => {
+      if (phase === 'download') {
+        setProgress(`Downloading model… ${Math.round(pct * 100)}%`, pct * 0.7);
+      } else if (phase === 'init') {
+        setProgress('Initialising model…', 0.7 + pct * 0.15);
+      } else if (phase === 'inference') {
+        setProgress(pct < 1 ? `Upscaling (${factor}×)…` : 'Finalising…', 0.85 + pct * 0.15);
+      } else if (phase === 'ready') {
+        setProgress('Ready', 1);
+      }
+    });
+
+    const currentLayer = getLayerById(layer.id);
+    if (!currentLayer) { hideProgress(); unlock(); return; }
+
+    setProgress('Applying result…', 1);
+
+    // Update layer.src and natural dimensions; display size stays the same.
+    currentLayer.src      = resultCanvas.toDataURL('image/png');
+    currentLayer.naturalW = resultCanvas.width;
+    currentLayer.naturalH = resultCanvas.height;
+    ensureImage(currentLayer.src);
+
+    renderPropsPanel();
+    scheduleRender();
+    pushHistory(`Upscale ${factor}×`);
+    hideProgress();
+  } catch (err) {
+    console.error('AI upscale failed:', err);
+    showAiError('Failed: ' + (err.message || 'Unknown error'));
+    hideProgress();
+  } finally {
+    unlock();
   }
 }

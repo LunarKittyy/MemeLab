@@ -36,6 +36,23 @@
           <div class="numfield"><span>H</span><input class="fullinput" type="number" id="customH" min="50" max="4000"></div>
         </div>
         <button class="smallbtn full" id="btnReset" style="margin-top:6px;">Reset canvas</button>
+        <button class="smallbtn full" id="btnOutpaint" style="margin-top:6px;">Expand canvas (AI)</button>
+        <div id="outpaintPanel" style="display:none;margin-top:8px;">
+          <div class="sizegrid">
+            <div class="numfield"><span>Top</span><input class="fullinput" type="number" id="outpaintTop" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Btm</span><input class="fullinput" type="number" id="outpaintBottom" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Left</span><input class="fullinput" type="number" id="outpaintLeft" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Right</span><input class="fullinput" type="number" id="outpaintRight" min="0" max="2000" value="128"></div>
+          </div>
+          <div id="outpaintProgress" style="display:none;margin-top:6px;">
+            <div class="ai-progress-label" id="outpaintProgressLabel">Loading model…</div>
+            <div class="ai-progress-track"><div class="ai-progress-bar" id="outpaintProgressBar"></div></div>
+          </div>
+          <div id="outpaintError" class="ai-error" style="display:none;"></div>
+          <div class="row" style="margin-top:6px;">
+            <button class="smallbtn full" id="btnOutpaintRun">Run AI expand</button>
+          </div>
+        </div>
       </div>
 
       <div class="section">

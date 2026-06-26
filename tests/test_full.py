@@ -15,7 +15,7 @@ import os
 from playwright.sync_api import sync_playwright
 from PIL import Image
 
-BASE_URL = "http://localhost:8731"
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://localhost:8731")
 TEST_URL = f"{BASE_URL}/tests/index.test.html"
 PROD_URL = f"{BASE_URL}/index.html"
 
@@ -512,6 +512,214 @@ def run():
         # No errors throughout.
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
+
+        # ---- Section: Track G — AI Tools (mocked inference) ----
+        ctx_ai = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_ai = ctx_ai.new_page()
+        errors_ai = []
+        page_ai.on("pageerror", lambda exc: errors_ai.append(str(exc)))
+        page_ai.goto(TEST_URL)
+        page_ai.wait_for_timeout(500)
+        check("ai-tools: boots clean", len(errors_ai) == 0, str(errors_ai))
+
+        # Upload an image to get an image layer.
+        with page_ai.expect_file_chooser() as fc_ai:
+            page_ai.click("#iconAddImage")
+        fc_ai.value.set_files(SAMPLE_IMG)
+        page_ai.wait_for_timeout(500)
+
+        st_ai = page_ai.evaluate("window.__test.getState()")
+        ai_img = next((l for l in st_ai["layers"] if l["type"] == "image"), None)
+        check("ai-tools: image layer present", ai_img is not None)
+
+        if ai_img:
+            # Select the image layer so props panel renders.
+            page_ai.evaluate("(id) => window.__test.selectLayer(id)", ai_img["id"])
+            page_ai.wait_for_timeout(200)
+
+            # Verify AI tool buttons exist in the DOM.
+            has_genfill = page_ai.evaluate("() => !!document.getElementById('iGenFill')")
+            has_up2x    = page_ai.evaluate("() => !!document.getElementById('iUpscale2x')")
+            has_up4x    = page_ai.evaluate("() => !!document.getElementById('iUpscale4x')")
+            has_bgremove = page_ai.evaluate("() => !!document.getElementById('iBgRemove')")
+            check("ai-tools: Generative fill button exists in props", has_genfill)
+            check("ai-tools: Upscale 2x button exists in props", has_up2x)
+            check("ai-tools: Upscale 4x button exists in props", has_up4x)
+            check("ai-tools: Remove background button exists in props", has_bgremove)
+
+            # Inject a mock inpaint implementation, pre-warm the mask in the image cache,
+            # and run generative fill. All done in one async evaluate so ordering is guaranteed.
+            setup_ok = page_ai.evaluate("""
+            async () => {
+              // Install mock inpaint impl.
+              const mod = await import('/src/cutout/inpaint.js');
+              mod._setInpaintImpl(async (srcCanvas, maskCanvas, onProgress) => {
+                onProgress && onProgress('inference', 1);
+                onProgress && onProgress('ready', 1);
+                const out = document.createElement('canvas');
+                out.width  = srcCanvas.width;
+                out.height = srcCanvas.height;
+                out.getContext('2d').fillStyle = '#00ff00'; // green — visually distinct
+                out.getContext('2d').fillRect(0, 0, out.width, out.height);
+                return out;
+              });
+
+              // Set mask on the live layer and pre-warm in imageCache.
+              const { state, ensureImage } = await import('/src/core/state.js');
+              const layer = state.layers.find(l => l.type === 'image');
+              if (!layer) return false;
+
+              // Build a 10x10 all-white mask canvas.
+              const c = document.createElement('canvas');
+              c.width = c.height = 10;
+              const cx = c.getContext('2d');
+              cx.fillStyle = 'rgba(255,255,255,1)';
+              cx.fillRect(0, 0, 10, 10);
+              const maskUrl = c.toDataURL('image/png');
+
+              // Pre-warm in cache so ensureImage() inside runGenerativeFill returns complete img.
+              const maskImg = ensureImage(maskUrl);
+              await new Promise((resolve) => {
+                if (maskImg.complete && maskImg.naturalWidth > 0) { resolve(); return; }
+                maskImg.onload = resolve;
+                maskImg.onerror = resolve;
+                setTimeout(resolve, 3000);
+              });
+
+              layer.mask = { enabled: true, src: maskUrl, invert: false, feather: 0 };
+
+              // Re-render props panel so button handlers are re-wired with updated layer.
+              const { renderPropsPanel } = await import('/src/ui/props/panel.js');
+              renderPropsPanel();
+              return { layerId: layer.id, maskLoaded: maskImg.complete && maskImg.naturalWidth > 0 };
+            }
+            """)
+            page_ai.wait_for_timeout(300)
+            check("ai-tools: inpaint mock injected and mask ready", bool(setup_ok) and setup_ok.get("maskLoaded", False) if isinstance(setup_ok, dict) else bool(setup_ok))
+
+            # Capture state before running generative fill.
+            st_before = page_ai.evaluate("window.__test.getState()")
+            img_before = next(l for l in st_before["layers"] if l["type"] == "image")
+            src_before = img_before.get("src", "")
+
+            # Click the generative fill button.
+            page_ai.evaluate("() => { const b = document.getElementById('iGenFill'); if (b) b.click(); }")
+            # Wait for async operation to complete (mock is fast but props panel re-renders).
+            page_ai.wait_for_timeout(1200)
+
+            check("ai-tools: no errors after mock generative fill", len(errors_ai) == 0, str(errors_ai))
+
+            st_after_fill = page_ai.evaluate("window.__test.getState()")
+            img_after = next((l for l in st_after_fill["layers"] if l["type"] == "image"), None)
+            check("ai-tools: image layer still present after fill", img_after is not None)
+
+            if img_after:
+                src_changed = img_after.get("src", "") != src_before
+                check("ai-tools: layer.src was replaced by fill result", src_changed)
+                mask_cleared = not img_after.get("mask", {}).get("enabled", True)
+                check("ai-tools: mask cleared after generative fill", mask_cleared)
+
+            # Verify upscale buttons exist and are wired (we just check they don't throw on click
+            # without a model — they will show an error in the AI error div, not a page error).
+            # Install mock for upscale as well.
+            page_ai.evaluate("""
+            async () => {
+              // Patch upscaleImage to return a 2x canvas without downloading anything.
+              const upscaleMod = await import('/src/cutout/upscale.js');
+              window.__upscaleMod = upscaleMod;
+              // We can't easily patch this without a _setUpscaleImpl hook.
+              // The button click will attempt to load the model; if network is unavailable
+              // it will show an AI error. We just verify no page-level crash occurs.
+            }
+            """)
+            page_ai.evaluate("() => { const b = document.getElementById('iUpscale2x'); if (b && !b.disabled) b.click(); }")
+            page_ai.wait_for_timeout(300)
+            check("ai-tools: upscale button click causes no page error", len(errors_ai) == 0, str(errors_ai))
+
+        # Outpaint panel toggle.
+        has_outpaint_btn = page_ai.evaluate("() => !!document.getElementById('btnOutpaint')")
+        check("ai-tools: outpaint button exists in toolbar", has_outpaint_btn)
+
+        panel_hidden_initially = page_ai.evaluate("""
+        () => {
+          const p = document.getElementById('outpaintPanel');
+          return p ? (p.style.display === 'none' || p.style.display === '') : false;
+        }""")
+        check("ai-tools: outpaint panel is hidden initially", panel_hidden_initially)
+
+        page_ai.click("#btnOutpaint")
+        page_ai.wait_for_timeout(150)
+        panel_shown = page_ai.evaluate("() => document.getElementById('outpaintPanel').style.display !== 'none'")
+        check("ai-tools: outpaint panel shown after button click", panel_shown)
+
+        has_run_btn = page_ai.evaluate("() => !!document.getElementById('btnOutpaintRun')")
+        check("ai-tools: outpaint run button exists", has_run_btn)
+        check("ai-tools: no errors after outpaint panel interaction", len(errors_ai) == 0, str(errors_ai))
+
+        # Module import smoke test — confirm new modules load without JS errors.
+        import_ok = page_ai.evaluate("""
+        async () => {
+          try {
+            await import('/src/cutout/inpaint.js');
+            await import('/src/cutout/upscale.js');
+            await import('/src/cutout/outpaint.js');
+            return true;
+          } catch (e) {
+            window.__moduleImportError = e.message;
+            return false;
+          }
+        }
+        """)
+        page_ai.wait_for_timeout(300)
+        check("ai-tools: new AI modules import without JS errors", import_ok)
+        check("ai-tools: no page errors throughout", len(errors_ai) == 0, str(errors_ai))
+
+        ctx_ai.close()
+
+        # ---- Track G slow test: real inference (gated by SLOW_TESTS env var) ----
+        if os.environ.get("SLOW_TESTS"):
+            ctx_slow = browser.new_context(viewport={"width": 1400, "height": 900})
+            page_slow = ctx_slow.new_page()
+            errors_slow = []
+            page_slow.on("pageerror", lambda exc: errors_slow.append(str(exc)))
+            page_slow.goto(TEST_URL)
+            page_slow.wait_for_timeout(500)
+
+            with page_slow.expect_file_chooser() as fc_slow:
+                page_slow.click("#iconAddImage")
+            fc_slow.value.set_files(SAMPLE_IMG)
+            page_slow.wait_for_timeout(500)
+
+            st_slow = page_slow.evaluate("window.__test.getState()")
+            slow_img = next((l for l in st_slow["layers"] if l["type"] == "image"), None)
+            if slow_img:
+                page_slow.evaluate("(id) => window.__test.selectLayer(id)", slow_img["id"])
+                page_slow.wait_for_timeout(200)
+                # Set mask and trigger real inpainting.
+                page_slow.evaluate("""
+                async () => {
+                  const { state } = await import('/src/core/state.js');
+                  const layer = state.layers.find(l => l.type === 'image');
+                  if (!layer) return;
+                  const c = document.createElement('canvas');
+                  c.width = c.height = 64;
+                  const cx = c.getContext('2d');
+                  cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, 64, 64);
+                  layer.mask = { enabled: true, src: c.toDataURL(), invert: false, feather: 0 };
+                  const { renderPropsPanel } = await import('/src/ui/props/panel.js');
+                  renderPropsPanel();
+                }
+                """)
+                page_slow.wait_for_timeout(200)
+                page_slow.evaluate("() => document.getElementById('iGenFill') && document.getElementById('iGenFill').click()")
+                # Wait up to 60 s for real model inference.
+                page_slow.wait_for_timeout(60000)
+                check("ai-tools [slow]: no page errors during real inpaint", len(errors_slow) == 0, str(errors_slow))
+                st_slow_after = page_slow.evaluate("window.__test.getState()")
+                slow_img_after = next((l for l in st_slow_after["layers"] if l["type"] == "image"), None)
+                check("ai-tools [slow]: real inpaint replaced layer.src", slow_img_after and slow_img_after.get("src") != slow_img.get("src"))
+
+            ctx_slow.close()
 
         browser.close()
 
