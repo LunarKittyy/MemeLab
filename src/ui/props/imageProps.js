@@ -238,11 +238,6 @@ function _hslSectionHtml(layer) {
     </div>`;
 }
 
-function _adjProp(layer, type, prop, def) {
-  const a = (layer.adjustments || []).find(x => x.type === type);
-  return a ? (a[prop] ?? def) : def;
-}
-
 function _adjProp(layer, type, prop, defaultVal) {
   const a = (layer.adjustments || []).find(x => x.type === type);
   return a ? (a[prop] ?? defaultVal) : defaultVal;
@@ -409,8 +404,12 @@ function _maskToolsHtml() {
         <div class="row"><button class="smallbtn full" id="iPolyClose">Close polygon</button></div>
         <div class="row"><button class="smallbtn full danger" id="iPolyCancel">Cancel polygon</button></div>
       </div>
+      <div class="row" style="margin-top:6px;font-size:11px;color:var(--text-faint);">Swipe on canvas to adjust focused slider</div>
     </div>`;
-    <div class="row" style="margin-top:6px;font-size:11px;color:var(--text-faint);">Swipe on canvas to adjust focused slider</div>`;
+}
+
+function _adjustmentsSectionHtml(layer) {
+  const inner = _maskToolsHtml() + _adjustmentControlsHtml(layer);
   return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
 }
 
@@ -486,26 +485,6 @@ export function imagePropsHtml(layer) {
 }
 
 // ─── Wire adjustments ─────────────────────────────────────────────────────
-export function wireImageProps(layer) {
-  byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
-  byId('iCrop').addEventListener('click', () => openCropModal(layer));
-
-  // ---- Track-J: before/after compare ----
-  byId('iCompareToggle').addEventListener('click', () => {
-    state.compareMode = state.compareMode === 'toggle' ? null : 'toggle';
-    renderPropsPanel();
-    scheduleRender();
-  });
-  byId('iCompareSplit').addEventListener('click', () => {
-    state.compareMode = state.compareMode === 'split' ? null : 'split';
-    renderPropsPanel();
-    scheduleRender();
-  });
-
-  byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
-  byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
-  byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
-
 // Returns a function that safely re-renders the dynamic slider region
 // and syncs the base slider values.
 function makeRerenderSliders(layer) {
@@ -545,6 +524,7 @@ function wireBaseSliders(layer) {
       if (adj) { adj.value = v; } else { layer.adjustments.push({ type, value: v }); }
       clearAdjustCache();
       scheduleRender();
+      _updateFilterActiveState(layer);
     });
     el.addEventListener('change', () => pushHistory());
   }
@@ -769,6 +749,18 @@ export function wireImageProps(layer) {
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
 
+  // ---- Track-J: before/after compare ----
+  byId('iCompareToggle').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'toggle' ? null : 'toggle';
+    renderPropsPanel();
+    scheduleRender();
+  });
+  byId('iCompareSplit').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'split' ? null : 'split';
+    renderPropsPanel();
+    scheduleRender();
+  });
+
   // ---- Filter preset strip ----
   _wireFilterStrip(layer);
 
@@ -782,9 +774,6 @@ export function wireImageProps(layer) {
     byId(id).addEventListener('focus', () => { state.swipeAdjustTarget = id; _showSwipeHint(); });
     byId(id).addEventListener('blur',  () => { if (state.swipeAdjustTarget === id) state.swipeAdjustTarget = null; });
   }
-  wireAdj('aiBright', 'brightness');
-  wireAdj('aiContr',  'contrast');
-  wireAdj('aiSat',    'saturation');
   wireSwipeAdj('aiBright');
   wireSwipeAdj('aiContr');
   wireSwipeAdj('aiSat');

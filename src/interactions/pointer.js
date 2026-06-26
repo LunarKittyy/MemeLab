@@ -284,6 +284,7 @@ function onPointerDown(evt) {
       gradientPointerDown(p);
     }
     return;
+  }
   // ---- Track-J: init swipe-adjust last position ----
   lastSwipeX = evt.clientX;
 

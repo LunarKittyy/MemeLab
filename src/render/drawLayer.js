@@ -170,6 +170,10 @@ export function drawDrawLayer(ctx, layer) {
   ctx.drawImage(bmp, 0, 0, layer.w, layer.h);
 }
 
+export function rasterizeDrawLayer(ctx, layer, _srcCanvas) {
+  drawDrawLayer(ctx, layer);
+}
+
 // ---- Utility ----
 
 function hexToRgba(hex) {

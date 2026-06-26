@@ -1,11 +1,8 @@
-import { state, getSelected, drawState } from '../core/state.js';
+import { state, getSelected, drawState, saveUIPref, ensureImage } from '../core/state.js';
 import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultSpeechBubbleLayer, defaultDrawLayer } from '../core/layers.js';
 import { toggleStickerPicker } from './stickerPicker.js';
-import { state, getSelected, saveUIPref } from '../core/state.js';
-import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/layers.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
-import { ensureImage } from '../core/state.js';
 import { scheduleRender, resizeStageBuffer } from '../render/renderer.js';
 import { selectLayer } from '../interactions/pointer.js';
 import { setIcon } from './icons.js';

@@ -112,6 +112,7 @@ function drawSelectionOverlay(ctx) {
   const layer = getSelected();
   const ds = dispScaleFactor();
 
+  if (!layer) return;
   // Perspective warp mode: draw warp corner handles instead of normal selection.
   if (layer.type === 'image' && layer.perspectiveWarp?.enabled) {
     const pw = layer.perspectiveWarp;
@@ -555,19 +556,19 @@ export function renderScene(ctx, opts) {
     for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
     ctx.restore();
   } else {
-    for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
-  for (const layer of state.layers) {
-    if (isToggleCompare && layer.type === 'image') {
-      // Draw original: no adjustments, no mask
-      const savedAdj = layer.adjustments;
-      const savedMask = layer.mask;
-      layer.adjustments = [];
-      layer.mask = layer.mask ? { ...layer.mask, enabled: false } : { enabled: false, src: null };
-      drawLayer(ctx, layer, backdrop);
-      layer.adjustments = savedAdj;
-      layer.mask = savedMask;
-    } else {
-      drawLayer(ctx, layer, backdrop);
+    for (const layer of state.layers) {
+      if (isToggleCompare && layer.type === 'image') {
+        // Draw original: no adjustments, no mask
+        const savedAdj = layer.adjustments;
+        const savedMask = layer.mask;
+        layer.adjustments = [];
+        layer.mask = layer.mask ? { ...layer.mask, enabled: false } : { enabled: false, src: null };
+        drawLayer(ctx, layer, backdrop);
+        layer.adjustments = savedAdj;
+        layer.mask = savedMask;
+      } else {
+        drawLayer(ctx, layer, backdrop);
+      }
     }
   }
   if (!opts.forExport) drawSelectionOverlay(ctx);

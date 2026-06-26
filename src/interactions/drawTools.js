@@ -471,6 +471,10 @@ function getActiveDrawLayer() {
  * Abort any in-progress stroke without committing. Called when tool changes
  * or layer is deselected mid-stroke.
  */
+export function initDrawToolHandlers(_getActiveLayerFn) {
+  // getActiveDrawLayer() already uses getSelected() directly; no setup needed
+}
+
 export function abortActiveStroke() {
   if (_activeStroke) {
     _activeStroke = null;

@@ -14,7 +14,6 @@ export const state = {
   selectedIds: new Set(), // Set<string> — full multi-select set (transient UI state, never persisted)
   activeTool: null,       // 'lasso'|'polygon'|'wand'|'brushMask'|'gradientMask'|null
   straighten: 0,
-  selectedId: null,
 
   // ---- Track-J: UI preferences (persisted to localStorage, NOT in history) ----
   showGrid: _loadPref('ml_showGrid', false),

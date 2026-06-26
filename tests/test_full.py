@@ -1511,6 +1511,12 @@ def run():
         reset_slider('aiDehaze')
 
         # Undo after each effect type: test vignette undo specifically
+        # Ensure vignette adjustment is added via picker before setting slider
+        page_fx.evaluate("""() => {
+            const btn = document.querySelector('.adj-pick-btn[data-type="vignette"]');
+            if (btn) btn.click();
+        }""")
+        page_fx.wait_for_timeout(150)
         page_fx.evaluate("""() => {
             const sl = document.getElementById('aiVignette');
             if (!sl) return;
