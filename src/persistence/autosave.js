@@ -55,7 +55,7 @@ function reconcileIdsAndCounters() {
   counters.text = maxNum.text; counters.image = maxNum.image; counters.rect = maxNum.rect;
 }
 
-function applyLoadedSnapshot(snap) {
+export function applyLoadedSnapshot(snap) {
   state.width = snap.width || 1080;
   state.height = snap.height || 1080;
   state.background = snap.background || { type: 'color', color: '#ffffff', src: null, fit: 'cover' };
