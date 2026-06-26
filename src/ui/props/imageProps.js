@@ -1,4 +1,4 @@
-import { getLayerById, ensureImage } from '../../core/state.js';
+import { getLayerById, ensureImage, state } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { clearAdjustCache } from '../../render/adjustCache.js';
@@ -8,6 +8,10 @@ import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
+import { setActiveTool } from '../../interactions/pointer.js';
+import { setWandTolerance, getWandTolerance, setGradientType, getGradientType } from '../../interactions/selectionTools.js';
+import { setBrushSize, setBrushMode } from '../../interactions/brushMask.js';
+import { overlay } from '../../interactions/toolOverlay.js';
 
 function _adjVal(layer, type) {
   const a = (layer.adjustments || []).find(x => x.type === type);
@@ -20,6 +24,49 @@ function _adjustmentsHtml(layer) {
     ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
     ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
   return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
+}
+
+function _maskToolsHtml() {
+  const t = state.activeTool;
+  const wandTol = getWandTolerance();
+  const bSize = overlay.brushSize;
+  const bMode = overlay.brushMode;
+  const gType = getGradientType();
+  return `
+    <div style="margin-top:8px;">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Masking tools</div>
+      <div class="seg" style="flex-wrap:wrap;gap:4px;" id="iMaskToolBtns">
+        <button data-tool="lasso"        class="${t === 'lasso' ? 'active' : ''}">Lasso</button>
+        <button data-tool="polygon"      class="${t === 'polygon' ? 'active' : ''}">Polygon</button>
+        <button data-tool="wand"         class="${t === 'wand' ? 'active' : ''}">Wand</button>
+        <button data-tool="brushMask"    class="${t === 'brushMask' ? 'active' : ''}">Brush</button>
+        <button data-tool="gradientMask" class="${t === 'gradientMask' ? 'active' : ''}">Gradient</button>
+      </div>
+      <div id="iWandControls" style="display:${t === 'wand' ? 'block' : 'none'};margin-top:6px;">
+        ${rangeRow('Tolerance', 'iWandTol', 0, 255, 1, wandTol)}
+      </div>
+      <div id="iBrushControls" style="display:${t === 'brushMask' ? 'block' : 'none'};margin-top:6px;">
+        ${rangeRow('Brush size', 'iBrushSize', 2, 200, 1, bSize)}
+        <div class="row" style="margin-top:4px;"><label>Mode</label>
+          <div class="seg" id="iBrushModeSeg">
+            <button data-m="reveal" class="${bMode === 'reveal' ? 'active' : ''}">Reveal</button>
+            <button data-m="hide"   class="${bMode === 'hide'   ? 'active' : ''}">Hide</button>
+          </div>
+        </div>
+      </div>
+      <div id="iGradientControls" style="display:${t === 'gradientMask' ? 'block' : 'none'};margin-top:6px;">
+        <div class="row"><label>Type</label>
+          <div class="seg" id="iGradTypeSeg">
+            <button data-gt="linear" class="${gType === 'linear' ? 'active' : ''}">Linear</button>
+            <button data-gt="radial" class="${gType === 'radial' ? 'active' : ''}">Radial</button>
+          </div>
+        </div>
+      </div>
+      <div id="iPolyControls" style="display:${t === 'polygon' ? 'block' : 'none'};margin-top:6px;">
+        <div class="row"><button class="smallbtn full" id="iPolyClose">Close polygon</button></div>
+        <div class="row"><button class="smallbtn full danger" id="iPolyCancel">Cancel polygon</button></div>
+      </div>
+    </div>`;
 }
 
 export function imagePropsHtml(layer) {
@@ -50,6 +97,7 @@ export function imagePropsHtml(layer) {
       <div class="togglerow" style="margin-top:8px;"><span style="font-size:11.5px;color:var(--text-dim);">Lock aspect ratio</span>
         <label class="switch"><input type="checkbox" id="iAspect" ${layer.aspectLocked ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
+      ${_maskToolsHtml()}
       ${collapsibleHtml('iMaskSection', 'Mask', maskInner, { defaultOpen: mask.enabled })}
     </div>
     <div class="section" id="aiSection">
@@ -117,6 +165,66 @@ export function wireImageProps(layer) {
     layer.mask = { enabled: false, src: null, invert: false, feather: 0 };
     renderPropsPanel(); scheduleRender(); pushHistory('Clear mask');
   });
+
+  // ---- Masking tool buttons ----
+  const toolBtns = document.querySelectorAll('#iMaskToolBtns button');
+  toolBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      setActiveTool(tool);
+      // Re-render the props panel so active state reflects the toggle
+      renderPropsPanel();
+    });
+  });
+
+  // Wand tolerance
+  const wandTolEl = byId('iWandTol');
+  if (wandTolEl) {
+    wandTolEl.addEventListener('input', (e) => {
+      setWandTolerance(Number(e.target.value));
+      byId('iWandTolval').textContent = e.target.value;
+    });
+  }
+
+  // Brush controls
+  const brushSizeEl = byId('iBrushSize');
+  if (brushSizeEl) {
+    brushSizeEl.addEventListener('input', (e) => {
+      setBrushSize(Number(e.target.value));
+      byId('iBrushSizeval').textContent = e.target.value;
+      scheduleRender();
+    });
+  }
+  const brushModeBtns = document.querySelectorAll('#iBrushModeSeg button');
+  brushModeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setBrushMode(btn.dataset.m);
+      brushModeBtns.forEach((b) => b.classList.toggle('active', b.dataset.m === btn.dataset.m));
+    });
+  });
+
+  // Gradient type
+  const gradTypeBtns = document.querySelectorAll('#iGradTypeSeg button');
+  gradTypeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setGradientType(btn.dataset.gt);
+      gradTypeBtns.forEach((b) => b.classList.toggle('active', b.dataset.gt === btn.dataset.gt));
+    });
+  });
+
+  // Polygon close / cancel
+  const polyCloseBtn = byId('iPolyClose');
+  if (polyCloseBtn) {
+    polyCloseBtn.addEventListener('click', () => {
+      import('../../interactions/selectionTools.js').then((m) => m.polygonClose());
+    });
+  }
+  const polyCancelBtn = byId('iPolyCancel');
+  if (polyCancelBtn) {
+    polyCancelBtn.addEventListener('click', () => {
+      import('../../interactions/selectionTools.js').then((m) => m.polygonCancel());
+    });
+  }
 
   // ---- AI background removal ----
   byId('iBgRemove').addEventListener('click', () => runBgRemoval(layer));

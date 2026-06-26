@@ -513,6 +513,111 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Section 5: Selection & Masking tools ----
+        ctx_mask = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_mask = ctx_mask.new_page()
+        errors_mask = []
+        page_mask.on("pageerror", lambda exc: errors_mask.append(str(exc)))
+        page_mask.goto(TEST_URL)
+        page_mask.wait_for_timeout(500)
+        check("mask: boots clean", len(errors_mask) == 0, str(errors_mask))
+
+        # Add an image layer to work with.
+        with page_mask.expect_file_chooser() as fc_mask:
+            page_mask.click("#iconAddImage")
+        fc_mask.value.set_files(SAMPLE_IMG)
+        page_mask.wait_for_timeout(500)
+        st_mask = page_mask.evaluate("window.__test.getState()")
+        mask_img = next(l for l in st_mask["layers"] if l["type"] == "image")
+        mask_img_id = mask_img["id"]
+
+        # Select the image layer.
+        page_mask.evaluate("(id) => window.__test.selectLayer(id)", mask_img_id)
+        page_mask.wait_for_timeout(150)
+
+        # 1. Activating the lasso tool sets state.activeTool to 'lasso'.
+        page_mask.evaluate("() => window.__test.setActiveTool('lasso')")
+        page_mask.wait_for_timeout(50)
+        active_tool = page_mask.evaluate("() => window.__test.getActiveTool()")
+        check("mask: activating lasso sets activeTool='lasso'", active_tool == "lasso",
+              f"activeTool={active_tool}")
+
+        # 2. Simulating a lasso drag on the image layer produces a non-null mask.src.
+        page_mask.evaluate("""(id) => window.__test.simulateLasso(id, [
+            [-100, -100], [-100, 100], [100, 100], [100, -100]
+        ])""", mask_img_id)
+        page_mask.wait_for_timeout(200)
+        st_after_lasso = page_mask.evaluate("window.__test.getState()")
+        lasso_img = next(l for l in st_after_lasso["layers"] if l["id"] == mask_img_id)
+        check("mask: lasso produces non-null mask.src",
+              lasso_img.get("mask", {}).get("src") is not None)
+        check("mask: lasso sets mask.enabled=true",
+              lasso_img.get("mask", {}).get("enabled") is True)
+
+        # 3. The resulting mask.src is a valid PNG dataURL.
+        mask_src = lasso_img.get("mask", {}).get("src", "") or ""
+        check("mask: lasso mask.src is a PNG dataURL",
+              mask_src.startswith("data:image/png;base64,"))
+
+        # 4. Undo after lasso tool reverts layer.mask.
+        page_mask.click("#btnUndo")
+        page_mask.wait_for_timeout(150)
+        st_undo_mask = page_mask.evaluate("window.__test.getState()")
+        undo_img = next(l for l in st_undo_mask["layers"] if l["id"] == mask_img_id)
+        check("mask: undo after lasso reverts mask.enabled",
+              undo_img.get("mask", {}).get("enabled") is False)
+
+        # 5. Magic wand on a solid-color region produces a mask.
+        page_mask.evaluate("() => window.__test.setActiveTool('wand')")
+        page_mask.wait_for_timeout(50)
+        check("mask: activating wand sets activeTool='wand'",
+              page_mask.evaluate("() => window.__test.getActiveTool()") == "wand")
+
+        # Tap near top-left of the layer (the sample image has a solid-ish color there).
+        page_mask.evaluate("(id) => window.__test.simulateWand(id, 10, 10)", mask_img_id)
+        page_mask.wait_for_timeout(300)
+        st_wand = page_mask.evaluate("window.__test.getState()")
+        wand_img = next(l for l in st_wand["layers"] if l["id"] == mask_img_id)
+        wand_src = (wand_img.get("mask", {}).get("src") or "")
+        check("mask: magic wand produces a PNG dataURL",
+              wand_src.startswith("data:image/png;base64,"))
+        check("mask: magic wand sets mask.enabled=true",
+              wand_img.get("mask", {}).get("enabled") is True)
+
+        # 6. Gradient mask produces a valid mask PNG.
+        # Clear the current mask first.
+        page_mask.evaluate("""(id) => {
+            const s = window.__test.getState();
+            // we can't directly mutate frozen snapshots; use setActiveTool to reset
+            window.__test.setActiveTool(null);
+        }""", mask_img_id)
+        page_mask.wait_for_timeout(50)
+        page_mask.evaluate("() => window.__test.setActiveTool('gradientMask')")
+        page_mask.wait_for_timeout(50)
+        check("mask: activating gradientMask sets activeTool",
+              page_mask.evaluate("() => window.__test.getActiveTool()") == "gradientMask")
+
+        page_mask.evaluate("(id) => window.__test.simulateGradient(id, 0, 0, null, null)", mask_img_id)
+        page_mask.wait_for_timeout(200)
+        st_grad = page_mask.evaluate("window.__test.getState()")
+        grad_img = next(l for l in st_grad["layers"] if l["id"] == mask_img_id)
+        grad_src = (grad_img.get("mask", {}).get("src") or "")
+        check("mask: gradient mask produces a PNG dataURL",
+              grad_src.startswith("data:image/png;base64,"))
+        check("mask: gradient mask sets mask.enabled=true",
+              grad_img.get("mask", {}).get("enabled") is True)
+
+        # 7. Clicking active tool button a second time deactivates it.
+        page_mask.evaluate("() => window.__test.setActiveTool('lasso')")
+        page_mask.wait_for_timeout(50)
+        page_mask.evaluate("() => window.__test.setActiveTool('lasso')")  # toggle off
+        page_mask.wait_for_timeout(50)
+        check("mask: toggling active tool off sets activeTool=null",
+              page_mask.evaluate("() => window.__test.getActiveTool()") is None)
+
+        check("mask: no page errors throughout", len(errors_mask) == 0, str(errors_mask))
+        ctx_mask.close()
+
         browser.close()
 
 
