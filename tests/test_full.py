@@ -513,6 +513,111 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Track A: tone adjustments (vibrance, temperature, highlights, shadows, auto-enhance) ----
+        ctx_ta = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_ta = ctx_ta.new_page()
+        errors_ta = []
+        page_ta.on("pageerror", lambda exc: errors_ta.append(str(exc)))
+        page_ta.goto(TEST_URL)
+        page_ta.wait_for_timeout(500)
+
+        # Add image layer.
+        with page_ta.expect_file_chooser() as fc_ta:
+            page_ta.click("#iconAddImage")
+        fc_ta.value.set_files(SAMPLE_IMG)
+        page_ta.wait_for_timeout(500)
+        st_ta = page_ta.evaluate("window.__test.getState()")
+        ta_img = next(l for l in st_ta["layers"] if l["type"] == "image")
+        ta_img_id = ta_img["id"]
+
+        page_ta.evaluate("(id) => window.__test.selectLayer(id)", ta_img_id)
+        page_ta.wait_for_timeout(200)
+
+        # Open Adjustments collapsible.
+        page_ta.evaluate("""() => {
+            const hdr = document.querySelector('#adjSection-hdr');
+            if (hdr) hdr.click();
+        }""")
+        page_ta.wait_for_timeout(100)
+
+        # Export baseline.
+        page_ta.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_ta.wait_for_timeout(50)
+        with page_ta.expect_download() as dl_ta_base:
+            page_ta.click("#btnExport")
+        ta_base_path = os.path.join(OUT_DIR, "ta_base.png")
+        dl_ta_base.value.save_as(ta_base_path)
+        img_ta_base = Image.open(ta_base_path)
+        check("tone-adj: baseline export valid", img_ta_base.size[0] > 0)
+
+        # Add vibrance adjustment via the picker button.
+        page_ta.evaluate("""() => {
+            const btn = document.querySelector('.adj-pick-btn[data-type="vibrance"]');
+            if (btn) btn.click();
+        }""")
+        page_ta.wait_for_timeout(150)
+
+        # Set vibrance to 80.
+        page_ta.evaluate("""() => {
+            const sl = document.getElementById('aiVibr');
+            if (!sl) return;
+            sl.value = '80';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            sl.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page_ta.wait_for_timeout(200)
+
+        st_ta2 = page_ta.evaluate("window.__test.getState()")
+        ta_img2 = next(l for l in st_ta2["layers"] if l["id"] == ta_img_id)
+        vibr_entry = next((a for a in ta_img2.get("adjustments", []) if a["type"] == "vibrance"), None)
+        check("tone-adj: vibrance picker adds vibrance to adjustments",
+              vibr_entry is not None and vibr_entry["value"] == 80,
+              str(ta_img2.get("adjustments")))
+
+        with page_ta.expect_download() as dl_ta_vibr:
+            page_ta.click("#btnExport")
+        ta_vibr_path = os.path.join(OUT_DIR, "ta_vibrance.png")
+        dl_ta_vibr.value.save_as(ta_vibr_path)
+        img_ta_vibr = Image.open(ta_vibr_path)
+        check("tone-adj: vibrance export differs from baseline",
+              adj_hash(ta_vibr_path) != adj_hash(ta_base_path))
+
+        # Add highlights adjustment.
+        page_ta.evaluate("""() => {
+            const btn = document.querySelector('.adj-pick-btn[data-type="highlights"]');
+            if (btn) btn.click();
+        }""")
+        page_ta.wait_for_timeout(150)
+        page_ta.evaluate("""() => {
+            const sl = document.getElementById('aiHighl');
+            if (!sl) return;
+            sl.value = '-60';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            sl.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page_ta.wait_for_timeout(200)
+        st_ta3 = page_ta.evaluate("window.__test.getState()")
+        ta_img3 = next(l for l in st_ta3["layers"] if l["id"] == ta_img_id)
+        highl_entry = next((a for a in ta_img3.get("adjustments", []) if a["type"] == "highlights"), None)
+        check("tone-adj: highlights picker adds highlights to adjustments",
+              highl_entry is not None and highl_entry["value"] == -60,
+              str(ta_img3.get("adjustments")))
+
+        # Auto-enhance button should populate adjustments.
+        page_ta.evaluate("""() => {
+            const btn = document.getElementById('aiAutoEnhance');
+            if (btn) btn.click();
+        }""")
+        page_ta.wait_for_timeout(500)
+        st_ta4 = page_ta.evaluate("window.__test.getState()")
+        ta_img4 = next(l for l in st_ta4["layers"] if l["id"] == ta_img_id)
+        check("tone-adj: auto-enhance writes at least one adjustment",
+              len(ta_img4.get("adjustments", [])) > 0,
+              str(ta_img4.get("adjustments")))
+
+        check("tone-adj: no page errors throughout", len(errors_ta) == 0, str(errors_ta))
+        ctx_ta.close()
+
         browser.close()
 
 
