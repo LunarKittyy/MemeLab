@@ -14,11 +14,46 @@ function _adjVal(layer, type) {
   return a ? a.value : 0;
 }
 
+function _adjProp(layer, type, prop, def) {
+  const a = (layer.adjustments || []).find(x => x.type === type);
+  return a ? (a[prop] ?? def) : def;
+}
+
 function _adjustmentsHtml(layer) {
-  const inner = `
+  // Split-tone values
+  const st = (layer.adjustments || []).find(x => x.type === 'split_tone') || {};
+  const stHHue = st.highlightHue ?? 0;
+  const stHSat = st.highlightSat ?? 0;
+  const stSHue = st.shadowHue    ?? 0;
+  const stSSat = st.shadowSat    ?? 0;
+  const stBal  = st.balance      ?? 0;
+
+  const toneHtml = `
     ${rangeRow('Brightness', 'aiBright', -100, 100, 1, _adjVal(layer, 'brightness'))}
     ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
     ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
+
+  const effectsHtml = `
+    ${rangeRow('Clarity',    'aiClarity',  0, 100, 1,    _adjVal(layer, 'clarity'))}
+    ${rangeRow('Dehaze',     'aiDehaze',  -100, 100, 1,  _adjVal(layer, 'dehaze'))}
+    ${rangeRow('Sharpen',    'aiSharpen',  0, 100, 1,    _adjVal(layer, 'sharpen'))}
+    ${rangeRow('Noise Reduc.','aiNR',     0, 100, 1,    _adjVal(layer, 'noise_reduction'))}
+    ${rangeRow('Color Noise','aiNRColor',  0, 100, 1,    _adjProp(layer, 'noise_reduction', 'colorNoise', 0))}
+    ${rangeRow('Vignette',   'aiVignette',-100, 100, 1,  _adjVal(layer, 'vignette'))}
+    <div class="row" style="margin-top:4px;"><label style="font-size:11px;color:var(--text-dim);">Split-tone</label></div>
+    ${rangeRow('Highlight Hue', 'aiStHHue',   0, 360, 1, stHHue)}
+    ${rangeRow('Highlight Sat', 'aiStHSat',   0, 100, 1, stHSat)}
+    ${rangeRow('Shadow Hue',    'aiStSHue',   0, 360, 1, stSHue)}
+    ${rangeRow('Shadow Sat',    'aiStSSat',   0, 100, 1, stSSat)}
+    ${rangeRow('ST Balance',    'aiStBal', -100, 100, 1, stBal)}
+    <div class="row" style="margin-top:4px;"><label style="font-size:11px;color:var(--text-dim);">Grain</label></div>
+    ${rangeRow('Amount', 'aiGrain',    0, 100, 1, _adjVal(layer, 'grain'))}
+    ${rangeRow('Size',   'aiGrainSize',1, 5, 0.5, _adjProp(layer, 'grain', 'size', 1))}`;
+
+  const inner = `
+    ${collapsibleHtml('adjTone',    'Tone',    toneHtml,    { defaultOpen: true })}
+    ${collapsibleHtml('adjEffects', 'Effects', effectsHtml)}`;
+
   return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
 }
 
@@ -80,8 +115,17 @@ export function wireImageProps(layer) {
 
   // ---- Adjustments ----
   if (!layer.adjustments) layer.adjustments = [];
+
+  function getOrCreate(type, defaults) {
+    let adj = layer.adjustments.find(a => a.type === type);
+    if (!adj) { adj = Object.assign({ type }, defaults); layer.adjustments.push(adj); }
+    return adj;
+  }
+
   function wireAdj(id, type) {
-    byId(id).addEventListener('input', (e) => {
+    const el = byId(id);
+    if (!el) return;
+    el.addEventListener('input', (e) => {
       const v = Number(e.target.value);
       byId(id + 'val').textContent = v;
       let adj = layer.adjustments.find(a => a.type === type);
@@ -89,12 +133,67 @@ export function wireImageProps(layer) {
       clearAdjustCache();
       scheduleRender();
     });
-    byId(id).addEventListener('change', () => pushHistory());
+    el.addEventListener('change', () => pushHistory());
   }
+
+  function wireAdjProp(id, type, prop, defaults) {
+    const el = byId(id);
+    if (!el) return;
+    el.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      byId(id + 'val').textContent = v;
+      const adj = getOrCreate(type, defaults);
+      adj[prop] = v;
+      clearAdjustCache();
+      scheduleRender();
+    });
+    el.addEventListener('change', () => pushHistory());
+  }
+
+  // Tone
   wireAdj('aiBright', 'brightness');
   wireAdj('aiContr',  'contrast');
   wireAdj('aiSat',    'saturation');
+
+  // Effects — simple value sliders
+  wireAdj('aiClarity',  'clarity');
+  wireAdj('aiDehaze',   'dehaze');
+  wireAdj('aiSharpen',  'sharpen');
+  wireAdj('aiVignette', 'vignette');
+
+  // Noise reduction (two params on one adjustment entry)
+  wireAdjProp('aiNR',      'noise_reduction', 'value',      { value: 0, colorNoise: 0 });
+  wireAdjProp('aiNRColor', 'noise_reduction', 'colorNoise', { value: 0, colorNoise: 0 });
+
+  // Grain (two params)
+  wireAdjProp('aiGrain',     'grain', 'value', { value: 0, size: 1 });
+  wireAdjProp('aiGrainSize', 'grain', 'size',  { value: 0, size: 1 });
+
+  // Split-tone (multiple params on one entry)
+  function wireSplitTone(id, prop) {
+    const el = byId(id);
+    if (!el) return;
+    el.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      byId(id + 'val').textContent = v;
+      const adj = getOrCreate('split_tone', {
+        highlightHue: 0, highlightSat: 0, shadowHue: 0, shadowSat: 0, balance: 0,
+      });
+      adj[prop] = v;
+      clearAdjustCache();
+      scheduleRender();
+    });
+    el.addEventListener('change', () => pushHistory());
+  }
+  wireSplitTone('aiStHHue', 'highlightHue');
+  wireSplitTone('aiStHSat', 'highlightSat');
+  wireSplitTone('aiStSHue', 'shadowHue');
+  wireSplitTone('aiStSSat', 'shadowSat');
+  wireSplitTone('aiStBal',  'balance');
+
   wireCollapsible('adjSection');
+  wireCollapsible('adjTone');
+  wireCollapsible('adjEffects');
 
   // ---- Mask controls ----
   if (!layer.mask) layer.mask = { enabled: false, src: null, invert: false, feather: 0 };
