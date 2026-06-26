@@ -30,6 +30,7 @@ let _gl = null;
 let _glCanvas = null;
 let _prog = null;
 let _uBright, _uContrast, _uSat;
+let _tex = null; // persistent reusable texture
 
 function initGL() {
   if (_gl) return true;
@@ -62,6 +63,15 @@ function initGL() {
   _uContrast = gl.getUniformLocation(_prog, 'u_contrast');
   _uSat     = gl.getUniformLocation(_prog, 'u_saturation');
   gl.uniform1i(gl.getUniformLocation(_prog, 'u_tex'), 0);
+
+  // Allocate a single persistent texture; reused across all applyAdjustments calls.
+  _tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, _tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
   return true;
 }
 
@@ -83,20 +93,13 @@ export function applyAdjustments(srcCanvas, adjustments) {
     gl.viewport(0, 0, w, h);
   }
 
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.bindTexture(gl.TEXTURE_2D, _tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, srcCanvas);
 
   gl.uniform1f(_uBright, brightness);
   gl.uniform1f(_uContrast, contrast);
   gl.uniform1f(_uSat, saturation);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-  gl.deleteTexture(tex);
 
   const out = document.createElement('canvas');
   out.width = w; out.height = h;

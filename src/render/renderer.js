@@ -155,24 +155,78 @@ _thumbCanvas.width = 60;
 _thumbCanvas.height = 60;
 const _thumbCtx = _thumbCanvas.getContext('2d');
 
-function renderThumbToDataURL(id) {
-  const w = 60, h = 60;
-  const ctx = _thumbCtx;
-  ctx.clearRect(0, 0, w, h);
-
-  ctx.save();
+// Pre-rendered checkerboard background for thumbnails — built once, reused every call.
+const _thumbBg = document.createElement('canvas');
+_thumbBg.width = 60;
+_thumbBg.height = 60;
+(function buildThumbBg() {
+  const ctx = _thumbBg.getContext('2d');
   ctx.fillStyle = '#16131c';
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, 60, 60);
   ctx.fillStyle = '#24202d';
   const size = 6;
-  for (let y = 0; y < h; y += size) {
-    for (let x = 0; x < w; x += size) {
+  for (let y = 0; y < 60; y += size) {
+    for (let x = 0; x < 60; x += size) {
       if ((Math.floor(x / size) + Math.floor(y / size)) % 2 === 0) {
         ctx.fillRect(x, y, size, size);
       }
     }
   }
-  ctx.restore();
+})();
+
+// Thumbnail dirty-tracking: cache dataURL per id, keyed by a serial that
+// encodes the content that affects that thumbnail.  Only re-render when the
+// serial changes.  Keyed by layer id (or 'background').
+const _thumbCache = new Map(); // id -> { serial, dataURL }
+
+function imgLoaded(src) {
+  if (!src) return false;
+  const img = ensureImage(src);
+  return !!(img && img.complete && img.naturalWidth);
+}
+
+function thumbSerial(id) {
+  if (id === 'background') {
+    const bg = state.background;
+    return JSON.stringify({ type: bg.type, color: bg.color, src: bg.src ? bg.src.slice(-32) : null, fit: bg.fit, loaded: imgLoaded(bg.src) });
+  }
+  const layer = getLayerById(id);
+  if (!layer) return '';
+  return JSON.stringify({
+    x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+    rotation: layer.rotation, opacity: layer.opacity,
+    visible: layer.visible,
+    // type-specific fields
+    src: layer.src ? layer.src.slice(-32) : null,
+    srcLoaded: imgLoaded(layer.src),
+    text: layer.text, font: layer.font, color: layer.color,
+    bold: layer.bold, italic: layer.italic, size: layer.sizeScale || layer.size,
+    align: layer.align, vAlign: layer.vAlign, lineHeight: layer.lineHeight,
+    padding: layer.padding, letterSpacing: layer.letterSpacing,
+    stroke: JSON.stringify(layer.stroke), box: JSON.stringify(layer.box),
+    mode: layer.mode, radius: layer.radius, amount: layer.amount,
+    strokeWidth: layer.strokeWidth, strokeColor: layer.strokeColor,
+    flipX: layer.flipX, flipY: layer.flipY,
+    crop: JSON.stringify(layer.crop),
+    adjustments: JSON.stringify(layer.adjustments),
+    mask: layer.mask ? JSON.stringify({ enabled: layer.mask.enabled, invert: layer.mask.invert, feather: layer.mask.feather, src: layer.mask.src ? layer.mask.src.slice(-32) : null, maskLoaded: imgLoaded(layer.mask.src) }) : null,
+    blendMode: layer.blendMode,
+  });
+}
+
+export function invalidateThumbCache(id) {
+  if (id !== undefined) {
+    _thumbCache.delete(id);
+  } else {
+    _thumbCache.clear();
+  }
+}
+
+function renderThumbToDataURL(id) {
+  const w = 60, h = 60;
+  const ctx = _thumbCtx;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(_thumbBg, 0, 0);
 
   if (id === 'background') {
     const bg = state.background;
@@ -216,7 +270,16 @@ function renderThumbToDataURL(id) {
 
 export function updateThumbnails() {
   document.querySelectorAll('.thumb-img').forEach((img) => {
-    img.src = renderThumbToDataURL(img.dataset.id);
+    const id = img.dataset.id;
+    const serial = thumbSerial(id);
+    const cached = _thumbCache.get(id);
+    if (cached && cached.serial === serial) {
+      // Content hasn't changed — skip re-render, reuse cached dataURL
+      return;
+    }
+    const dataURL = renderThumbToDataURL(id);
+    _thumbCache.set(id, { serial, dataURL });
+    img.src = dataURL;
   });
 }
 

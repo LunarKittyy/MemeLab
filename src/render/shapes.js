@@ -1,7 +1,7 @@
 import { ensureImage } from '../core/state.js';
 import { drawRoundedRect } from './text.js';
 import { applyBoxEffect } from './boxEffects.js';
-import { getAdjustedCanvas } from './adjustCache.js';
+import { getAdjustedCanvas, getMaskedCanvas } from './adjustCache.js';
 
 export { drawRoundedRect };
 
@@ -36,30 +36,33 @@ export function drawImageLayer(ctx, layer) {
   const mask = layer.mask;
 
   if (mask?.enabled && mask.src) {
-    const maskImg = ensureImage(mask.src);
-    const w = Math.ceil(layer.w), h = Math.ceil(layer.h);
-    const off = document.createElement('canvas');
-    off.width = w; off.height = h;
-    const offCtx = off.getContext('2d');
-    _drawImageContent(offCtx, img, layer, adjCanvas);
-    if (maskImg && maskImg.complete && maskImg.naturalWidth) {
-      if (mask.invert) {
-        const inv = document.createElement('canvas');
-        inv.width = w; inv.height = h;
-        const invCtx = inv.getContext('2d');
-        invCtx.fillStyle = '#fff';
-        invCtx.fillRect(0, 0, w, h);
-        invCtx.globalCompositeOperation = 'destination-out';
-        invCtx.drawImage(maskImg, 0, 0, w, h);
-        offCtx.globalCompositeOperation = 'destination-in';
-        offCtx.drawImage(inv, 0, 0);
-      } else {
-        offCtx.globalCompositeOperation = 'destination-in';
-        offCtx.drawImage(maskImg, 0, 0, w, h);
+    const maskedCanvas = getMaskedCanvas(layer, (off) => {
+      const w = off.width, h = off.height;
+      const offCtx = off.getContext('2d');
+      _drawImageContent(offCtx, img, layer, adjCanvas);
+      const maskImg = ensureImage(mask.src);
+      if (maskImg && maskImg.complete && maskImg.naturalWidth) {
+        if (mask.invert) {
+          const inv = document.createElement('canvas');
+          inv.width = w; inv.height = h;
+          const invCtx = inv.getContext('2d');
+          invCtx.fillStyle = '#fff';
+          invCtx.fillRect(0, 0, w, h);
+          invCtx.globalCompositeOperation = 'destination-out';
+          invCtx.drawImage(maskImg, 0, 0, w, h);
+          offCtx.globalCompositeOperation = 'destination-in';
+          offCtx.drawImage(inv, 0, 0);
+        } else {
+          offCtx.globalCompositeOperation = 'destination-in';
+          offCtx.drawImage(maskImg, 0, 0, w, h);
+        }
       }
+    });
+    if (maskedCanvas) {
+      ctx.drawImage(maskedCanvas, 0, 0);
+      return;
     }
-    ctx.drawImage(off, 0, 0);
-    return;
+    // mask or image not loaded yet — fall through to raw draw
   }
 
   _drawImageContent(ctx, img, layer, adjCanvas);
