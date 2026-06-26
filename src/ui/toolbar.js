@@ -297,6 +297,7 @@ export function wireGlobalUI() {
   fileInput = document.getElementById('fileInput');
   document.getElementById('btnAddText').addEventListener('click', addTextLayerAction);
   document.getElementById('btnAddRect').addEventListener('click', addRectLayerAction);
+  document.getElementById('btnAddDraw') && document.getElementById('btnAddDraw').addEventListener('click', addDrawLayerAction);
   document.getElementById('btnAddImage').addEventListener('click', () => { pendingImageTarget = null; fileInput.click(); });
   const btnBubble = document.getElementById('btnAddBubble');
   if (btnBubble) btnBubble.addEventListener('click', addSpeechBubbleAction);

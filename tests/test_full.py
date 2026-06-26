@@ -1827,6 +1827,212 @@ def run():
         check("draw: no page errors throughout", len(errors_draw) == 0, str(errors_draw))
         ctx_draw.close()
 
+        # ---- Section Track-E: Retouch tools ----
+        ctx_rt = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_rt = ctx_rt.new_page()
+        errors_rt = []
+        page_rt.on("pageerror", lambda exc: errors_rt.append(str(exc)))
+        page_rt.goto(TEST_URL)
+        page_rt.wait_for_timeout(500)
+        check("retouch: boots clean", len(errors_rt) == 0, str(errors_rt))
+
+        # Upload an image first (gives retouch tools a source to sample)
+        with page_rt.expect_file_chooser() as fc_rt:
+            page_rt.click("#iconAddImage")
+        fc_rt.value.set_files(SAMPLE_IMG)
+        page_rt.wait_for_timeout(500)
+
+        # Add a draw layer
+        page_rt.click("#btnAddDraw")
+        page_rt.wait_for_timeout(150)
+        st_rt = page_rt.evaluate("window.__test.getState()")
+        draw_layer = next((l for l in st_rt["layers"] if l["type"] == "draw"), None)
+        check("retouch: draw layer created", draw_layer is not None)
+        check("retouch: draw layer has strokes array", draw_layer is not None and isinstance(draw_layer.get("strokes"), list))
+        check("retouch: draw layer strokes start empty", draw_layer is not None and len(draw_layer.get("strokes", [])) == 0)
+        if not draw_layer:
+            ctx_rt.close()
+            browser.close()
+            return
+
+        draw_id = draw_layer["id"]
+
+        # ---- Heal stroke ----
+        # Inject a heal stroke directly into the layer and verify rasterization doesn't throw
+        page_rt.evaluate("""(drawId) => {
+            const layer = window.__test.getState().layers.find(l => l.id === drawId);
+            if (!layer) return;
+            // Inject stroke directly via live state reference
+            const liveLayer = window.__state_ref || (() => {
+                // Access live state through the module
+                return null;
+            })();
+        }""", draw_id)
+
+        # Better approach: use the test hook + direct state mutation via evaluate
+        page_rt.evaluate("""(drawId) => {
+            // Import state and add stroke directly
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({ tool: 'heal', points: [[100, 100], [110, 110]], size: 30 });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+
+        # Force a render and check for no errors
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: heal stroke rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        # Verify stroke is stored
+        st_heal = page_rt.evaluate("""(drawId) => {
+            return new Promise(resolve => {
+                import('../src/core/state.js').then(m => {
+                    const layer = m.state.layers.find(l => l.id === drawId);
+                    resolve(layer ? layer.strokes : []);
+                });
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(100)
+        st_heal = page_rt.evaluate("""(drawId) => {
+            // Use synchronous snapshot
+            return window.__test.getState().layers.find(l => l.id === drawId)?.strokes || [];
+        }""", draw_id)
+        check("retouch: heal stroke stored in layer.strokes",
+              any(s.get("tool") == "heal" for s in st_heal),
+              str(st_heal))
+
+        # ---- Clone stamp: setting source stores it in state ----
+        page_rt.evaluate("""() => {
+            import('../src/interactions/drawTools.js').then(m => {
+                m.drawToolState.cloneSource = { x: 200, y: 200 };
+                m.onRetouchToolActivated('clone', null);
+            });
+        }""")
+        page_rt.wait_for_timeout(150)
+        # Add a clone stroke manually
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({
+                        tool: 'clone', points: [[300, 300], [310, 310]],
+                        size: 30, opacity: 1, sourceX: 200, sourceY: 200
+                    });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: clone stamp rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        st_clone = page_rt.evaluate("""(drawId) => {
+            return window.__test.getState().layers.find(l => l.id === drawId)?.strokes || [];
+        }""", draw_id)
+        check("retouch: clone stamp stroke stored in layer.strokes",
+              any(s.get("tool") == "clone" for s in st_clone),
+              str(st_clone))
+
+        # ---- Dodge stroke ----
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({ tool: 'dodge', points: [[400, 400], [410, 410]], size: 40, exposure: 0.5 });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: dodge stroke rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        # ---- Burn stroke ----
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({ tool: 'burn', points: [[500, 500], [510, 510]], size: 40, exposure: 0.5 });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: burn stroke rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        # ---- Red-eye stroke ----
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({ tool: 'redeye', cx: 300, cy: 300, radius: 25 });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: red-eye stroke rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        # ---- Liquify stroke ----
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) {
+                    layer.strokes.push({ tool: 'liquify', points: [[600, 600, 5, 3], [610, 607, 5, 3]], size: 60, strength: 0.5 });
+                }
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(200)
+        page_rt.evaluate("() => import('../src/render/renderer.js').then(m => m.scheduleRender())")
+        page_rt.wait_for_timeout(200)
+        check("retouch: liquify stroke rasterizes without errors", len(errors_rt) == 0, str(errors_rt))
+
+        # Verify all strokes are in the layer
+        st_all = page_rt.evaluate("""(drawId) => {
+            return window.__test.getState().layers.find(l => l.id === drawId)?.strokes || [];
+        }""", draw_id)
+        tools_present = {s.get("tool") for s in st_all}
+        check("retouch: all five retouch stroke types stored",
+              {"heal", "clone", "dodge", "burn", "redeye", "liquify"}.issubset(tools_present),
+              str(tools_present))
+
+        # ---- Undo removes last stroke ----
+        stroke_count_before = len(st_all)
+        # Push a history entry for current state
+        page_rt.evaluate("() => import('../src/core/history.js').then(m => m.pushHistory('test'))")
+        page_rt.wait_for_timeout(100)
+        # Add one more stroke
+        page_rt.evaluate("""(drawId) => {
+            import('../src/core/state.js').then(m => {
+                const layer = m.state.layers.find(l => l.id === drawId);
+                if (layer) layer.strokes.push({ tool: 'heal', points: [[50, 50]], size: 20 });
+            });
+        }""", draw_id)
+        page_rt.wait_for_timeout(150)
+        page_rt.evaluate("() => import('../src/core/history.js').then(m => m.pushHistory('extra heal'))")
+        page_rt.wait_for_timeout(150)
+        st_extra = page_rt.evaluate("""(drawId) => {
+            return window.__test.getState().layers.find(l => l.id === drawId)?.strokes || [];
+        }""", draw_id)
+        count_with_extra = len(st_extra)
+        # Undo
+        page_rt.click("#btnUndo")
+        page_rt.wait_for_timeout(200)
+        st_after_undo = page_rt.evaluate("""(drawId) => {
+            return window.__test.getState().layers.find(l => l.id === drawId)?.strokes || [];
+        }""", draw_id)
+        check("retouch: undo after stroke removes last entry from strokes",
+              len(st_after_undo) < count_with_extra,
+              f"before={count_with_extra}, after={len(st_after_undo)}")
+
+        check("retouch: no page errors throughout", len(errors_rt) == 0, str(errors_rt))
+        ctx_rt.close()
+
         browser.close()
 
 

@@ -1,5 +1,7 @@
 import { state, counters, nextId, drawState } from './state.js';
 
+export let drawCounter = 0;
+
 export const FONT_OPTIONS = [
   { value: 'FuturaCondXBold', label: 'Futura Condensed ExtraBold' },
   { value: 'MemeImpact', label: 'Impact' },
