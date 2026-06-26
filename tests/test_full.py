@@ -15,7 +15,7 @@ import os
 from playwright.sync_api import sync_playwright
 from PIL import Image
 
-BASE_URL = "http://localhost:8734"
+BASE_URL = "http://localhost:8731"
 TEST_URL = f"{BASE_URL}/tests/index.test.html"
 PROD_URL = f"{BASE_URL}/index.html"
 
