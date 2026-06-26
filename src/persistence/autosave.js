@@ -75,6 +75,13 @@ export function applyLoadedSnapshot(snap) {
       }
     }
     if (l.type === 'image') delete l.exposure;
+    // Track I migrations
+    if (l.type === 'text' && l.arc === undefined) l.arc = 0;
+    if (l.type === 'rect' && l.subtype === 'speechbubble') {
+      if (l.tailDir === undefined) l.tailDir = 'bottom';
+      if (l.tailPos === undefined) l.tailPos = 0.5;
+      if (l.tailLen === undefined) l.tailLen = 30;
+    }
   });
   state.selectedId = null;
   reconcileIdsAndCounters();

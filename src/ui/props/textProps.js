@@ -2,10 +2,11 @@ import { FONT_OPTIONS } from '../../core/layers.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { ICONS } from '../icons.js';
-import { byId, rangeRow, escapeHtmlContent, transformHtml, actionsHtml, wireActions } from './shared.js';
+import { byId, rangeRow, escapeHtmlContent, collapsibleHtml, wireCollapsible, transformHtml, actionsHtml, wireActions } from './shared.js';
 import { renderPropsPanel } from './panel.js';
 import { customSelectHtml, wireCustomSelect } from '../customSelect.js';
 import { colorSwatchHtml, wireColorSwatch } from '../colorPicker.js';
+import { listTextPresets, saveTextPreset, applyTextPreset, deleteTextPreset } from '../../presets/textPresets.js';
 
 export function textPropsHtml(layer) {
   return `
@@ -65,6 +66,8 @@ export function textPropsHtml(layer) {
         </div>
       </div>
     </div>
+    ${arcSectionHtml(layer)}
+    ${presetsSectionHtml()}
     ${transformHtml(layer)}
     <div class="section">
       <div class="togglerow"><span style="font-size:11.5px;color:var(--text-dim);">Lock aspect ratio</span>
@@ -72,6 +75,29 @@ export function textPropsHtml(layer) {
       </div>
     </div>
     ${actionsHtml()}`;
+}
+
+function arcSectionHtml(layer) {
+  const arc = layer.arc || 0;
+  const inner = `
+    <div class="section" style="padding-top:0;">
+      ${rangeRow('Bend', 'tArc', -180, 180, 1, arc)}
+      <div class="row"><button class="smallbtn" id="tArcReset" style="margin-top:2px;">Flat (reset)</button></div>
+    </div>`;
+  return collapsibleHtml('tArcSection', 'Arc path', inner);
+}
+
+function presetsSectionHtml() {
+  const presets = listTextPresets();
+  const chips = presets.map((p) =>
+    `<span class="preset-chip"><button class="preset-name" data-pname="${escapeHtmlContent(p.name)}">${escapeHtmlContent(p.name)}</button><button class="preset-del" data-pname="${escapeHtmlContent(p.name)}" title="Delete">&times;</button></span>`
+  ).join('');
+  const inner = `
+    <div class="section" style="padding-top:0;">
+      <div class="preset-chips-scroll" style="margin-bottom:8px;">${chips || '<span style="color:var(--text-dim);font-size:11px;">No presets yet</span>'}</div>
+      <button class="smallbtn full" id="tPresetSave">Save current style…</button>
+    </div>`;
+  return collapsibleHtml('tPresetsSection', 'Style presets', inner);
 }
 
 export function wireTextProps(layer) {
@@ -136,4 +162,44 @@ export function wireTextProps(layer) {
   wireColorSwatch('tBoxColor', (hex) => { layer.box.color = hex; scheduleRender(); pushHistory(); });
   byId('tAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
   wireActions(layer);
+
+  // Arc section
+  wireCollapsible('tArcSection');
+  byId('tArc').addEventListener('input', (e) => {
+    layer.arc = +e.target.value;
+    byId('tArcval').textContent = e.target.value;
+    scheduleRender();
+  });
+  byId('tArc').addEventListener('change', pushHistory);
+  byId('tArcReset').addEventListener('click', () => {
+    layer.arc = 0;
+    byId('tArc').value = 0;
+    byId('tArcval').textContent = '0';
+    scheduleRender(); pushHistory();
+  });
+
+  // Style presets section
+  wireCollapsible('tPresetsSection');
+  byId('tPresetSave').addEventListener('click', () => {
+    const name = window.prompt('Preset name:');
+    if (!name || !name.trim()) return;
+    saveTextPreset(name.trim(), layer);
+    renderPropsPanel();
+  });
+  document.querySelectorAll('.preset-name').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const presets = listTextPresets();
+      const p = presets.find((x) => x.name === btn.dataset.pname);
+      if (!p) return;
+      applyTextPreset(p, layer);
+      renderPropsPanel();
+      scheduleRender(); pushHistory();
+    });
+  });
+  document.querySelectorAll('.preset-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      deleteTextPreset(btn.dataset.pname);
+      renderPropsPanel();
+    });
+  });
 }

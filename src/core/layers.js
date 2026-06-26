@@ -26,6 +26,7 @@ export function defaultTextLayer() {
     stroke: { enabled: true, color: '#000000', width: strokeW },
     box: { enabled: false, mode: 'color', color: '#ffffff', amount: 16 },
     adjustments: [], blendMode: 'normal',
+    arc: 0,
   };
 }
 
@@ -59,5 +60,18 @@ export function defaultRectLayer() {
     color: '#FF3D8A', radius: 0, strokeWidth: 0, strokeColor: '#000000',
     adjustments: [], blendMode: 'normal',
   };
+}
+
+export function defaultSpeechBubbleLayer() {
+  const base = defaultRectLayer();
+  // Override name: counters.rect was already incremented by defaultRectLayer()
+  base.name = 'Speech Bubble ' + counters.rect;
+  base.subtype = 'speechbubble';
+  base.tailDir = 'bottom';
+  base.tailPos = 0.5;
+  base.tailLen = 30;
+  base.color = '#ffffff';
+  base.radius = 16;
+  return base;
 }
 
