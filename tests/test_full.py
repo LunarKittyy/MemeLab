@@ -15,7 +15,8 @@ import os
 from playwright.sync_api import sync_playwright
 from PIL import Image
 
-BASE_URL = "http://localhost:8731"
+import os as _os
+BASE_URL = _os.environ.get("BASE_URL", "http://localhost:8731")
 TEST_URL = f"{BASE_URL}/tests/index.test.html"
 PROD_URL = f"{BASE_URL}/index.html"
 
@@ -512,6 +513,187 @@ def run():
         # No errors throughout.
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
+
+        # ---- Section Track-J: Mobile UX Polish ----
+
+        ctx_j = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_j = ctx_j.new_page()
+        errors_j = []
+        page_j.on("pageerror", lambda exc: errors_j.append(str(exc)))
+        page_j.goto(TEST_URL)
+        page_j.wait_for_timeout(800)
+        check("track-j: page loads clean", len(errors_j) == 0, str(errors_j))
+
+        # -- Track-J 1: Grid state toggle and export does not include grid --
+        # Verify initial state
+        st_j_init = page_j.evaluate("window.__test.getState()")
+        check("track-j: showGrid defaults to false", st_j_init.get("showGrid") == False)
+        check("track-j: showRulers defaults to false", st_j_init.get("showRulers") == False)
+        check("track-j: snapToGuides defaults to true", st_j_init.get("snapToGuides") == True)
+        check("track-j: activeGuides starts empty", len(st_j_init.get("activeGuides") or []) == 0)
+
+        # Toggle grid on via JS (avoids click targeting issues)
+        page_j.evaluate("""() => document.getElementById('btnToggleGrid').click()""")
+        page_j.wait_for_timeout(100)
+        grid_state = page_j.evaluate("window.__test.getState().showGrid")
+        check("track-j: showGrid toggled to true", grid_state == True)
+
+        # Add an image so there is something to export
+        with page_j.expect_file_chooser() as fc_j:
+            page_j.evaluate("document.getElementById('btnAddImage').click()")
+        fc_j.value.set_files(SAMPLE_IMG)
+        page_j.wait_for_timeout(600)
+
+        # Export with grid on
+        page_j.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_j.wait_for_timeout(50)
+        with page_j.expect_download() as dl_j:
+            page_j.evaluate("document.getElementById('btnExport').click()")
+        grid_export_path = os.path.join(OUT_DIR, "trackj_grid_export.png")
+        dl_j.value.save_as(grid_export_path)
+        img_grid = Image.open(grid_export_path)
+        check("track-j: export with grid on is a valid 1080x1080 PNG", img_grid.size == (1080, 1080),
+              str(img_grid.size))
+
+        # Turn off grid, export again — must be pixel-identical (grid was not drawn in export)
+        page_j.evaluate("""() => document.getElementById('btnToggleGrid').click()""")
+        page_j.wait_for_timeout(100)
+        with page_j.expect_download() as dl_j2:
+            page_j.evaluate("document.getElementById('btnExport').click()")
+        nogrid_export_path = os.path.join(OUT_DIR, "trackj_nogrid_export.png")
+        dl_j2.value.save_as(nogrid_export_path)
+        import hashlib
+        def j_hash(path):
+            return hashlib.md5(open(path, 'rb').read()).hexdigest()
+        check("track-j: grid not visible in export (pixel-identical with grid on vs off)",
+              j_hash(grid_export_path) == j_hash(nogrid_export_path))
+
+        # -- Track-J 2: Rulers toggle --
+        page_j.evaluate("""() => document.getElementById('btnToggleRulers').click()""")
+        page_j.wait_for_timeout(100)
+        rulers_on = page_j.evaluate("window.__test.getState().showRulers")
+        check("track-j: showRulers toggled to true", rulers_on == True)
+        page_j.evaluate("""() => document.getElementById('btnToggleRulers').click()""")
+        page_j.wait_for_timeout(100)
+        rulers_off = page_j.evaluate("window.__test.getState().showRulers")
+        check("track-j: showRulers toggled back to false", rulers_off == False)
+
+        # -- Track-J 3: Snap-to-guides toggle --
+        page_j.evaluate("""() => document.getElementById('btnToggleSnap').click()""")
+        page_j.wait_for_timeout(100)
+        snap_off = page_j.evaluate("window.__test.getState().snapToGuides")
+        check("track-j: snapToGuides toggled to false", snap_off == False)
+        page_j.evaluate("""() => document.getElementById('btnToggleSnap').click()""")
+        page_j.wait_for_timeout(100)
+        snap_on = page_j.evaluate("window.__test.getState().snapToGuides")
+        check("track-j: snapToGuides toggled back to true", snap_on == True)
+
+        # -- Track-J 4: Before/after compare toggle (needs image layer with adjustments) --
+        st_j = page_j.evaluate("window.__test.getState()")
+        img_id_j = next((l["id"] for l in st_j["layers"] if l["type"] == "image"), None)
+        check("track-j: image layer present for compare test", img_id_j is not None)
+        if img_id_j:
+            page_j.evaluate("(id) => window.__test.selectLayer(id)", img_id_j)
+            page_j.wait_for_timeout(200)
+
+            # Open adjustments section and set brightness
+            page_j.evaluate("""() => {
+                const body = document.querySelector('#adjSection .collapsible-body');
+                if (body && body.style.display === 'none') {
+                    document.querySelector('#adjSection .collapsible-hdr').click();
+                }
+            }""")
+            page_j.wait_for_timeout(100)
+            page_j.evaluate("""() => {
+                const sl = document.getElementById('aiBright');
+                if (sl) { sl.value = '80'; sl.dispatchEvent(new Event('input', { bubbles: true })); sl.dispatchEvent(new Event('change', { bubbles: true })); }
+            }""")
+            page_j.wait_for_timeout(200)
+
+            st_j2 = page_j.evaluate("window.__test.getState()")
+            img_j2 = next(l for l in st_j2["layers"] if l["id"] == img_id_j)
+            bright_j = next((a for a in (img_j2.get("adjustments") or []) if a["type"] == "brightness"), None)
+            check("track-j: compare: brightness set to 80", bright_j is not None and bright_j["value"] == 80,
+                  str(img_j2.get("adjustments")))
+
+            # Toggle compare mode using the button in the props panel
+            compare_mode = page_j.evaluate("""() => {
+                const btn = document.getElementById('iCompareToggle');
+                if (!btn) return 'no-btn';
+                btn.click();
+                return window.__test.getState().compareMode;
+            }""")
+            page_j.wait_for_timeout(100)
+            check("track-j: compare toggle mode activated", compare_mode == 'toggle', str(compare_mode))
+
+            # Toggle off
+            cm_off = page_j.evaluate("""() => {
+                const btn = document.getElementById('iCompareToggle');
+                if (!btn) return 'no-btn';
+                btn.click();
+                return window.__test.getState().compareMode;
+            }""")
+            page_j.wait_for_timeout(100)
+            check("track-j: compare toggle turns off on second click", cm_off is None, str(cm_off))
+
+            # Test split compare
+            split_mode = page_j.evaluate("""() => {
+                const btn = document.getElementById('iCompareSplit');
+                if (!btn) return 'no-btn';
+                btn.click();
+                return window.__test.getState().compareMode;
+            }""")
+            page_j.wait_for_timeout(100)
+            check("track-j: compare split mode activated", split_mode == 'split', str(split_mode))
+            page_j.evaluate("""() => { const btn = document.getElementById('iCompareSplit'); if (btn) btn.click(); }""")
+            page_j.wait_for_timeout(50)
+
+        # -- Track-J 5: computeGuides returns alignment values --
+        guides_test = page_j.evaluate("""() => {
+            const layerA = { id: 'A', x: 0, y: 0, w: 200, h: 100, visible: true };
+            const layerB = { id: 'B', x: 300, y: 200, w: 150, h: 80, visible: true };
+            const guides = window.__test.computeGuides(layerB, [layerA, layerB]);
+            // Should have guide at x=0 (left of A), x=100 (center of A), x=200 (right of A)
+            const hasLeft = guides.some(g => g.x === 0);
+            const hasCenter = guides.some(g => g.x === 100);
+            const hasRight = guides.some(g => g.x === 200);
+            return { hasLeft, hasCenter, hasRight, count: guides.length };
+        }""")
+        check("track-j: computeGuides returns left edge of other layer", guides_test["hasLeft"] == True,
+              str(guides_test))
+        check("track-j: computeGuides returns center-x of other layer", guides_test["hasCenter"] == True,
+              str(guides_test))
+        check("track-j: computeGuides returns right edge of other layer", guides_test["hasRight"] == True,
+              str(guides_test))
+        check("track-j: computeGuides returns multiple guides", guides_test["count"] > 5)
+
+        # -- Track-J 6: swipe-adjust updates slider value on horizontal pointer move --
+        swipe_result = page_j.evaluate("""() => {
+            const sl = document.getElementById('aiBright');
+            if (!sl) return { ok: false, reason: 'no slider' };
+            sl.value = '0';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            const before = +sl.value;
+            // Focus the slider to set swipeAdjustTarget
+            sl.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+            const targetSet = window.__test.getState().swipeAdjustTarget === 'aiBright';
+            // Fire a pointermove on window WITHOUT a prior pointerdown.
+            // No drag is active, so swipe-adjust should fire when swipeAdjustTarget is set.
+            // First move to set lastSwipeX, then move right to produce a positive delta.
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 300, bubbles: true }));
+            window.dispatchEvent(new PointerEvent('pointermove', { clientX: 460, clientY: 300, bubbles: true }));
+            const after = +sl.value;
+            return { before, after, targetSet };
+        }""")
+        page_j.wait_for_timeout(100)
+        check("track-j: swipe-adjust: focus sets swipeAdjustTarget", swipe_result.get("targetSet") == True,
+              str(swipe_result))
+        check("track-j: swipe-adjust: horizontal swipe changes slider value",
+              swipe_result.get("after") != swipe_result.get("before"),
+              str(swipe_result))
+
+        check("track-j: no page errors throughout", len(errors_j) == 0, str(errors_j))
+        ctx_j.close()
 
         browser.close()
 

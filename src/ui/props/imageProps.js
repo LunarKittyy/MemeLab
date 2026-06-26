@@ -1,4 +1,4 @@
-import { getLayerById, ensureImage } from '../../core/state.js';
+import { getLayerById, ensureImage, state } from '../../core/state.js';
 import { pushHistory } from '../../core/history.js';
 import { scheduleRender } from '../../render/renderer.js';
 import { clearAdjustCache } from '../../render/adjustCache.js';
@@ -18,7 +18,8 @@ function _adjustmentsHtml(layer) {
   const inner = `
     ${rangeRow('Brightness', 'aiBright', -100, 100, 1, _adjVal(layer, 'brightness'))}
     ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
-    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
+    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}
+    <div class="row" style="margin-top:6px;font-size:11px;color:var(--text-faint);">Swipe on canvas to adjust focused slider</div>`;
   return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
 }
 
@@ -35,11 +36,20 @@ export function imagePropsHtml(layer) {
       ${rangeRow('Feather', 'iMaskFeather', 0, 50, 1, mask.feather ?? 0)}
       <div class="row" style="margin-top:6px;"><button class="smallbtn full danger" id="iMaskClear">Clear mask</button></div>
     </div>`;
+  const compareActive = state.compareMode === 'toggle';
+  const compareSplitActive = state.compareMode === 'split';
   return `
     <div class="section">
       <div class="section-title">Image</div>
       <div class="row"><button class="smallbtn full" id="iReplace">Replace image</button></div>
       <div class="row"><button class="smallbtn full" id="iCrop">Crop</button></div>
+      <div class="row">
+        <label>Compare</label>
+        <div class="seg">
+          <button id="iCompareToggle" class="${compareActive ? 'active' : ''}">Toggle</button>
+          <button id="iCompareSplit" class="${compareSplitActive ? 'active' : ''}">Split</button>
+        </div>
+      </div>
       <div class="row">
         <label>Flip</label>
         <div class="seg">
@@ -74,6 +84,19 @@ export function imagePropsHtml(layer) {
 export function wireImageProps(layer) {
   byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
   byId('iCrop').addEventListener('click', () => openCropModal(layer));
+
+  // ---- Track-J: before/after compare ----
+  byId('iCompareToggle').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'toggle' ? null : 'toggle';
+    renderPropsPanel();
+    scheduleRender();
+  });
+  byId('iCompareSplit').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'split' ? null : 'split';
+    renderPropsPanel();
+    scheduleRender();
+  });
+
   byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
@@ -91,9 +114,18 @@ export function wireImageProps(layer) {
     });
     byId(id).addEventListener('change', () => pushHistory());
   }
+
+  // ---- Track-J: swipe-adjust focus/blur wiring ----
+  function wireSwipeAdj(id) {
+    byId(id).addEventListener('focus', () => { state.swipeAdjustTarget = id; _showSwipeHint(); });
+    byId(id).addEventListener('blur',  () => { if (state.swipeAdjustTarget === id) state.swipeAdjustTarget = null; });
+  }
   wireAdj('aiBright', 'brightness');
   wireAdj('aiContr',  'contrast');
   wireAdj('aiSat',    'saturation');
+  wireSwipeAdj('aiBright');
+  wireSwipeAdj('aiContr');
+  wireSwipeAdj('aiSat');
   wireCollapsible('adjSection');
 
   // ---- Mask controls ----
@@ -122,6 +154,30 @@ export function wireImageProps(layer) {
   byId('iBgRemove').addEventListener('click', () => runBgRemoval(layer));
 
   wireActions(layer);
+}
+
+// ---- Track-J: swipe hint overlay ----
+let _swipeHintEl = null;
+let _swipeHintTimer = null;
+function _showSwipeHint() {
+  if (!_swipeHintEl) {
+    _swipeHintEl = document.createElement('div');
+    _swipeHintEl.style.cssText = [
+      'position:absolute', 'bottom:32px', 'left:50%', 'transform:translateX(-50%)',
+      'background:rgba(0,0,0,0.7)', 'color:#fff', 'font-size:12px', 'padding:6px 14px',
+      'border-radius:20px', 'pointer-events:none', 'z-index:100',
+      'display:flex', 'align-items:center', 'gap:8px', 'white-space:nowrap',
+      'transition:opacity 0.3s',
+    ].join(';');
+    _swipeHintEl.innerHTML = '&#8596; Swipe canvas left/right to adjust';
+    const area = document.getElementById('canvasArea');
+    if (area) { area.style.position = 'relative'; area.appendChild(_swipeHintEl); }
+  }
+  _swipeHintEl.style.opacity = '1';
+  clearTimeout(_swipeHintTimer);
+  _swipeHintTimer = setTimeout(() => {
+    if (_swipeHintEl) _swipeHintEl.style.opacity = '0';
+  }, 2000);
 }
 
 function setProgress(label, pct) {

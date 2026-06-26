@@ -1,4 +1,4 @@
-import { state, getSelected } from '../core/state.js';
+import { state, getSelected, saveUIPref } from '../core/state.js';
 import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/layers.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
@@ -414,6 +414,51 @@ export function wireGlobalUI() {
   window.addEventListener('keyup', (e) => {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && getSelected()) pushHistory();
   });
+
+  // ---- Track-J: grid / rulers / snap toggles ----
+  function _updateGridBtn() {
+    const btn = byId('btnToggleGrid');
+    if (btn) btn.classList.toggle('active', !!state.showGrid);
+  }
+  function _updateRulersBtn() {
+    const btn = byId('btnToggleRulers');
+    if (btn) btn.classList.toggle('active', !!state.showRulers);
+  }
+  function _updateSnapBtn() {
+    const btn = byId('btnToggleSnap');
+    if (btn) btn.classList.toggle('active', !!state.snapToGuides);
+  }
+  _updateGridBtn(); _updateRulersBtn(); _updateSnapBtn();
+
+  const btnGrid = byId('btnToggleGrid');
+  if (btnGrid) btnGrid.addEventListener('click', () => {
+    state.showGrid = !state.showGrid;
+    saveUIPref('ml_showGrid', state.showGrid);
+    _updateGridBtn();
+    scheduleRender();
+  });
+  const btnRulers = byId('btnToggleRulers');
+  if (btnRulers) btnRulers.addEventListener('click', () => {
+    state.showRulers = !state.showRulers;
+    saveUIPref('ml_showRulers', state.showRulers);
+    _updateRulersBtn();
+    scheduleRender();
+  });
+  const btnSnap = byId('btnToggleSnap');
+  if (btnSnap) btnSnap.addEventListener('click', () => {
+    state.snapToGuides = !state.snapToGuides;
+    saveUIPref('ml_snapToGuides', state.snapToGuides);
+    _updateSnapBtn();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (!e.ctrlKey && !e.metaKey) {
+      if (e.key.toLowerCase() === 'g') { e.preventDefault(); if (btnGrid) btnGrid.click(); }
+      if (e.key.toLowerCase() === 'r' && !e.shiftKey) { e.preventDefault(); if (btnRulers) btnRulers.click(); }
+    }
+  }, true); // capture phase to fire before the main keydown handler
 
   window.addEventListener('resize', resizeStageBuffer);
 }

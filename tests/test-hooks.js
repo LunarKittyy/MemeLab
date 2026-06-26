@@ -4,13 +4,29 @@
 // special test-mode branching needed anywhere in the app code itself.
 
 import { state } from '../src/core/state.js';
-import { selectLayer } from '../src/interactions/pointer.js';
+import { selectLayer, computeGuides } from '../src/interactions/pointer.js';
 import { stage, getViewportFitScale } from '../src/render/renderer.js';
 import { viewport } from '../src/core/viewport.js';
 
 window.__test = {
   getState() {
-    return JSON.parse(JSON.stringify(state));
+    // Include Track-J transient fields too
+    return {
+      ...JSON.parse(JSON.stringify({
+        width: state.width,
+        height: state.height,
+        background: state.background,
+        layers: state.layers,
+        selectedId: state.selectedId,
+      })),
+      showGrid: state.showGrid,
+      showRulers: state.showRulers,
+      gridSize: state.gridSize,
+      snapToGuides: state.snapToGuides,
+      compareMode: state.compareMode,
+      swipeAdjustTarget: state.swipeAdjustTarget,
+      activeGuides: state.activeGuides ? [...state.activeGuides] : [],
+    };
   },
   getSelectedId() {
     return state.selectedId;
@@ -30,5 +46,9 @@ window.__test = {
       left: rect.left + l.x * sx, top: rect.top + l.y * sy,
       w: l.w * sx, h: l.h * sy,
     };
+  },
+  // Track-J: test helper to run computeGuides
+  computeGuides(movingLayer, allLayers) {
+    return computeGuides(movingLayer, allLayers || state.layers);
   },
 };
