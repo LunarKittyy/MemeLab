@@ -2,6 +2,7 @@ import { state, getSelected, ensureImage, getLayerById } from '../core/state.js'
 import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
+import { rasterizeDrawLayer } from './drawLayer.js';
 import { viewport, resetViewport } from '../core/viewport.js';
 
 export let stage = null;
@@ -37,6 +38,22 @@ export function dispScaleFactor() {
 
 function drawLayer(ctx, layer, backdrop) {
   if (!layer.visible) return;
+
+  // Draw layers are full-canvas overlays; skip the per-layer transform.
+  if (layer.type === 'draw') {
+    ctx.save();
+    ctx.globalCompositeOperation = layer.blendMode || 'normal';
+    ctx.globalAlpha = clamp(layer.opacity, 0, 1);
+    const srcCanvas = _bakeSourceForDrawLayer(layer);
+    const off = document.createElement('canvas');
+    off.width = state.width; off.height = state.height;
+    const offCtx = off.getContext('2d');
+    rasterizeDrawLayer(offCtx, layer, srcCanvas);
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.globalCompositeOperation = layer.blendMode || 'normal';
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
@@ -81,6 +98,39 @@ function drawSelectionOverlay(ctx) {
     ctx.lineWidth = 1.6 * ds; ctx.strokeStyle = '#FF3D8A'; ctx.stroke();
   }
   ctx.restore();
+}
+
+/**
+ * Bake all layers below the given draw layer (plus the background) into a flat source canvas.
+ * This is used by retouch tools (heal, clone, dodge/burn, liquify) to sample from the underlying image.
+ */
+function _bakeSourceForDrawLayer(targetLayer) {
+  // Use transient cached canvas if available (set by drawTools.js during an active stroke)
+  if (state._healSourceCanvas) return state._healSourceCanvas;
+
+  const W = state.width, H = state.height;
+  const src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const sCtx = src.getContext('2d');
+
+  // Background
+  if (state.background.type === 'image' && state.background.src) {
+    const img = ensureImage(state.background.src);
+    if (img && img.complete && img.naturalWidth) {
+      drawCover(sCtx, img, 0, 0, W, H, state.background.fit);
+    } else {
+      sCtx.fillStyle = '#ffffff'; sCtx.fillRect(0, 0, W, H);
+    }
+  } else {
+    sCtx.fillStyle = state.background.color || '#ffffff'; sCtx.fillRect(0, 0, W, H);
+  }
+
+  // Layers below
+  for (const l of state.layers) {
+    if (l.id === targetLayer.id) break;
+    drawLayer(sCtx, l, null);
+  }
+  return src;
 }
 
 let backdropCanvas = null;
@@ -192,22 +242,37 @@ function renderThumbToDataURL(id) {
     }
   } else {
     const layer = getLayerById(id);
-    if (layer && layer.w > 0 && layer.h > 0) {
-      ctx.save();
-      ctx.translate(w / 2, h / 2);
-      const scale = Math.min(w / layer.w, h / layer.h);
-      ctx.scale(scale, scale);
-      ctx.rotate(deg2rad(layer.rotation));
-      ctx.globalAlpha = clamp(layer.opacity, 0, 1);
-      ctx.translate(-layer.w / 2, -layer.h / 2);
-      if (layer.type === 'image') {
-        drawImageLayer(ctx, layer);
-      } else if (layer.type === 'rect') {
-        drawRectLayer(ctx, layer);
-      } else if (layer.type === 'text') {
-        drawTextLayer(ctx, layer);
+    if (layer) {
+      if (layer.type === 'draw') {
+        // Draw layers are full-canvas — scale the full canvas down to thumbnail size
+        ctx.save();
+        const thumbScale = w / state.width;
+        ctx.scale(thumbScale, thumbScale);
+        ctx.globalAlpha = clamp(layer.opacity, 0, 1);
+        const srcCanvas = _bakeSourceForDrawLayer(layer);
+        const off = document.createElement('canvas');
+        off.width = state.width; off.height = state.height;
+        const offCtx = off.getContext('2d');
+        rasterizeDrawLayer(offCtx, layer, srcCanvas);
+        ctx.drawImage(off, 0, 0);
+        ctx.restore();
+      } else if (layer.w > 0 && layer.h > 0) {
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        const scale = Math.min(w / layer.w, h / layer.h);
+        ctx.scale(scale, scale);
+        ctx.rotate(deg2rad(layer.rotation));
+        ctx.globalAlpha = clamp(layer.opacity, 0, 1);
+        ctx.translate(-layer.w / 2, -layer.h / 2);
+        if (layer.type === 'image') {
+          drawImageLayer(ctx, layer);
+        } else if (layer.type === 'rect') {
+          drawRectLayer(ctx, layer);
+        } else if (layer.type === 'text') {
+          drawTextLayer(ctx, layer);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
   }
 

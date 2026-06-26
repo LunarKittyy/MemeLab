@@ -1,5 +1,5 @@
 import { state, getSelected } from '../core/state.js';
-import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/layers.js';
+import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultDrawLayer } from '../core/layers.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
 import { ensureImage } from '../core/state.js';
@@ -40,6 +40,16 @@ export function addRectLayerAction() {
   renderLayerList();
   selectLayer(l.id);
   pushHistory('Add shape layer');
+}
+
+export function addDrawLayerAction() {
+  const l = defaultDrawLayer();
+  state.layers.push(l);
+  setLastCreatedLayerId(l.id);
+  renderLayerList();
+  selectLayer(l.id);
+  pushHistory('Add draw layer');
+  openPanelMobile('right', true);
 }
 
 function handleImageFile(file, target) {
@@ -192,6 +202,7 @@ export function wireGlobalUI() {
   fileInput = document.getElementById('fileInput');
   document.getElementById('btnAddText').addEventListener('click', addTextLayerAction);
   document.getElementById('btnAddRect').addEventListener('click', addRectLayerAction);
+  document.getElementById('btnAddDraw') && document.getElementById('btnAddDraw').addEventListener('click', addDrawLayerAction);
   document.getElementById('btnAddImage').addEventListener('click', () => { pendingImageTarget = null; fileInput.click(); });
   fileInput.addEventListener('change', () => {
     if (fileInput.files && fileInput.files[0]) handleImageFile(fileInput.files[0], pendingImageTarget);

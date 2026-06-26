@@ -1,5 +1,7 @@
 import { state, counters, nextId } from './state.js';
 
+export let drawCounter = 0;
+
 export const FONT_OPTIONS = [
   { value: 'FuturaCondXBold', label: 'Futura Condensed ExtraBold' },
   { value: 'MemeImpact', label: 'Impact' },
@@ -45,6 +47,21 @@ export function defaultImageLayer(src, naturalW, naturalH) {
     crop: { x: 0, y: 0, w: 1, h: 1 },
     mask: { enabled: false, src: null, invert: false, feather: 0 },
     adjustments: [], blendMode: 'normal',
+  };
+}
+
+export function defaultDrawLayer() {
+  drawCounter++;
+  return {
+    id: nextId(),
+    type: 'draw',
+    name: 'Draw ' + drawCounter,
+    // Draw layers span the full canvas; x/y/w/h track the full canvas dimensions.
+    x: 0, y: 0, w: state.width, h: state.height,
+    rotation: 0, opacity: 1, visible: true, locked: false,
+    strokes: [],
+    blendMode: 'normal',
+    adjustments: [],
   };
 }
 
