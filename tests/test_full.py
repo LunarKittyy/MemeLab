@@ -15,7 +15,7 @@ import os
 from playwright.sync_api import sync_playwright
 from PIL import Image
 
-BASE_URL = "http://localhost:8731"
+BASE_URL = "http://localhost:8734"
 TEST_URL = f"{BASE_URL}/tests/index.test.html"
 PROD_URL = f"{BASE_URL}/index.html"
 
@@ -512,6 +512,237 @@ def run():
         # No errors throughout.
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
+
+        # ---- Track H: Export format, filename, .meme project, canvas resize ----
+        ctx_h = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_h = ctx_h.new_page()
+        errors_h = []
+        page_h.on("pageerror", lambda exc: errors_h.append(str(exc)))
+        page_h.goto(TEST_URL)
+        page_h.wait_for_timeout(600)
+        check("track-h: boots clean", len(errors_h) == 0, str(errors_h))
+
+        # Add an image layer
+        with page_h.expect_file_chooser() as fc_h:
+            page_h.click("#iconAddImage")
+        fc_h.value.set_files(SAMPLE_IMG)
+        page_h.wait_for_timeout(500)
+
+        # ---- JPEG export via localStorage settings ----
+        # Set localStorage export settings to JPEG, scale 1
+        page_h.evaluate("""
+        () => {
+          localStorage.setItem('exportSettings', JSON.stringify({
+            format: 'jpeg', quality: 92, scaleMode: 'multiplier', scale: 1, outW: 1080, outH: 1080
+          }));
+        }
+        """)
+        page_h.wait_for_timeout(50)
+        # Set scale selector to 1 so quickExport picks it up
+        page_h.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        with page_h.expect_download() as dl_jpeg_info:
+            page_h.click("#btnExport")
+        dl_jpeg = dl_jpeg_info.value
+        jpeg_path = os.path.join(OUT_DIR, "track_h_export.jpg")
+        dl_jpeg.save_as(jpeg_path)
+        page_h.wait_for_timeout(200)
+
+        # Check JPEG magic bytes: FF D8
+        with open(jpeg_path, 'rb') as f:
+            header = f.read(4)
+        check("track-h: JPEG export has valid JPEG header",
+              header[0] == 0xFF and header[1] == 0xD8,
+              header.hex())
+        check("track-h: JPEG download filename is meme.jpg",
+              dl_jpeg.suggested_filename == 'meme.jpg', dl_jpeg.suggested_filename)
+
+        # ---- WEBP export ----
+        page_h.evaluate("""
+        () => {
+          localStorage.setItem('exportSettings', JSON.stringify({
+            format: 'webp', quality: 85, scaleMode: 'multiplier', scale: 1, outW: 1080, outH: 1080
+          }));
+        }
+        """)
+        page_h.wait_for_timeout(50)
+        with page_h.expect_download() as dl_webp_info:
+            page_h.click("#btnExport")
+        dl_webp = dl_webp_info.value
+        webp_path = os.path.join(OUT_DIR, "track_h_export.webp")
+        dl_webp.save_as(webp_path)
+        page_h.wait_for_timeout(200)
+
+        # WEBP starts with RIFF...WEBP
+        with open(webp_path, 'rb') as f:
+            whead = f.read(12)
+        check("track-h: WEBP export has valid WEBP header",
+              whead[:4] == b'RIFF' and whead[8:12] == b'WEBP',
+              whead.hex())
+        check("track-h: WEBP download filename is meme.webp",
+              dl_webp.suggested_filename == 'meme.webp', dl_webp.suggested_filename)
+
+        # Reset localStorage to PNG for remaining tests
+        page_h.evaluate("""
+        () => {
+          localStorage.setItem('exportSettings', JSON.stringify({
+            format: 'png', quality: 92, scaleMode: 'multiplier', scale: 2, outW: 1080, outH: 1080
+          }));
+        }
+        """)
+
+        # ---- .meme export ----
+        state_before = page_h.evaluate("window.__test.getState()")
+        layer_count_before = len(state_before["layers"])
+        width_before = state_before["width"]
+        height_before = state_before["height"]
+
+        with page_h.expect_download() as dl_meme_info:
+            page_h.evaluate("""
+            async () => {
+              // Access the exportMemeFile function via a module import path
+              // from the test page's perspective
+              const { exportMemeFile } = await import('/src/persistence/memeFile.js');
+              await exportMemeFile();
+            }
+            """)
+        dl_meme = dl_meme_info.value
+        meme_path = os.path.join(OUT_DIR, "track_h_project.meme")
+        dl_meme.save_as(meme_path)
+        page_h.wait_for_timeout(200)
+
+        # .meme is a zip — check PK header
+        with open(meme_path, 'rb') as f:
+            meme_head = f.read(4)
+        check("track-h: .meme export is a zip (PK header)",
+              meme_head[:2] == b'PK', meme_head.hex())
+        check("track-h: .meme download filename is project.meme",
+              dl_meme.suggested_filename == 'project.meme', dl_meme.suggested_filename)
+
+        # ---- .meme import restores state ----
+        # Open the document panel and use its file picker for import
+        page_h.click("#btnDocument")
+        page_h.wait_for_timeout(300)
+        # Check the document panel opened
+        panel_visible = page_h.evaluate("""
+        () => {
+          const p = document.getElementById('documentPanel');
+          return p && p.classList.contains('show');
+        }
+        """)
+        check("track-h: document panel opens on btnDocument click", panel_visible)
+
+        # Close panel, then use a direct importMemeFile call to test
+        page_h.evaluate("document.getElementById('documentPanel').classList.remove('show')")
+        page_h.wait_for_timeout(100)
+
+        # Reset state to empty, then import
+        page_h.evaluate("""
+        () => {
+          const btn = document.getElementById('btnReset');
+          if (btn) { btn.click(); setTimeout(() => btn.click(), 10); }
+        }
+        """)
+        page_h.wait_for_timeout(400)
+
+        with page_h.expect_file_chooser() as fc_meme:
+            page_h.evaluate("""
+            async () => {
+              const { importMemeFile } = await import('/src/persistence/memeFile.js');
+              // Create a temp input to trigger the file chooser
+              const inp = document.createElement('input');
+              inp.type = 'file'; inp.accept = '.meme';
+              inp.onchange = (e) => importMemeFile(e.target.files[0]);
+              document.body.appendChild(inp);
+              inp.click();
+            }
+            """)
+        fc_meme.value.set_files(meme_path)
+        page_h.wait_for_timeout(800)
+
+        state_after = page_h.evaluate("window.__test.getState()")
+        check("track-h: .meme import restores layer count",
+              len(state_after["layers"]) == layer_count_before,
+              f"{layer_count_before} vs {len(state_after['layers'])}")
+        check("track-h: .meme import restores width",
+              state_after["width"] == width_before,
+              f"{width_before} vs {state_after['width']}")
+        check("track-h: .meme import restores height",
+              state_after["height"] == height_before,
+              f"{height_before} vs {state_after['height']}")
+
+        check("track-h: no errors throughout", len(errors_h) == 0, str(errors_h))
+        ctx_h.close()
+
+        # ---- Canvas Size mode: keeps layer at absolute position ----
+        ctx_resize = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_resize = ctx_resize.new_page()
+        errors_resize = []
+        page_resize.on("pageerror", lambda exc: errors_resize.append(str(exc)))
+        page_resize.goto(TEST_URL)
+        page_resize.wait_for_timeout(500)
+
+        with page_resize.expect_file_chooser() as fc_r:
+            page_resize.click("#iconAddImage")
+        fc_r.value.set_files(SAMPLE_IMG)
+        page_resize.wait_for_timeout(500)
+
+        st_r = page_resize.evaluate("window.__test.getState()")
+        layer_r = next(l for l in st_r["layers"] if l["type"] == "image")
+        orig_x = layer_r["x"]
+        orig_y = layer_r["y"]
+        orig_w = layer_r["w"]
+        orig_h = layer_r["h"]
+
+        # Apply Canvas Size resize (no layer scaling)
+        page_resize.evaluate("""
+        async () => {
+          const { applyCanvasResize } = await import('/src/ui/documentPanel.js');
+          applyCanvasResize(800, 600, 'canvas');
+        }
+        """)
+        page_resize.wait_for_timeout(200)
+
+        st_r2 = page_resize.evaluate("window.__test.getState()")
+        layer_r2 = next(l for l in st_r2["layers"] if l["type"] == "image")
+        check("track-h: Canvas Size mode preserves layer x",
+              abs(layer_r2["x"] - orig_x) < 0.01, f"{orig_x} -> {layer_r2['x']}")
+        check("track-h: Canvas Size mode preserves layer y",
+              abs(layer_r2["y"] - orig_y) < 0.01, f"{orig_y} -> {layer_r2['y']}")
+        check("track-h: Canvas Size mode preserves layer w",
+              abs(layer_r2["w"] - orig_w) < 0.01, f"{orig_w} -> {layer_r2['w']}")
+        check("track-h: canvas width changed to 800",
+              st_r2["width"] == 800, f"width={st_r2['width']}")
+
+        # ---- Image Size mode: scales layer proportionally ----
+        # Get current position after the canvas resize above
+        layer_before_img = layer_r2
+        cur_x = layer_before_img["x"]
+        cur_w = layer_before_img["w"]
+        old_cw = st_r2["width"]  # 800
+        old_ch = st_r2["height"]  # 600
+
+        page_resize.evaluate("""
+        async () => {
+          const { applyCanvasResize } = await import('/src/ui/documentPanel.js');
+          applyCanvasResize(400, 300, 'image');
+        }
+        """)
+        page_resize.wait_for_timeout(200)
+
+        st_r3 = page_resize.evaluate("window.__test.getState()")
+        check("track-h: Image Size mode sets new canvas width",
+              st_r3["width"] == 400, f"width={st_r3['width']}")
+        layer_r3 = next(l for l in st_r3["layers"] if l["type"] == "image")
+        # Layer should have been scaled by 400/800 = 0.5
+        expected_x = cur_x * 0.5
+        expected_w = cur_w * 0.5
+        check("track-h: Image Size mode scales layer x proportionally",
+              abs(layer_r3["x"] - expected_x) < 2, f"expected {expected_x:.1f}, got {layer_r3['x']:.1f}")
+        check("track-h: Image Size mode scales layer w proportionally",
+              abs(layer_r3["w"] - expected_w) < 2, f"expected {expected_w:.1f}, got {layer_r3['w']:.1f}")
+
+        check("track-h: no errors in resize tests", len(errors_resize) == 0, str(errors_resize))
+        ctx_resize.close()
 
         browser.close()
 

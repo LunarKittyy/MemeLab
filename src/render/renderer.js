@@ -242,3 +242,28 @@ export async function exportPng(scale) {
   renderScene(ctx, { forExport: true });
   return new Promise((resolve, reject) => off.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Export failed: canvas too large or out of memory')), 'image/png'));
 }
+
+/**
+ * Export the current scene as a specific format.
+ * @param {'png'|'jpeg'|'webp'} format
+ * @param {number} quality  0–1 (ignored for png)
+ * @param {number} scale    multiplier on state.width/height
+ * @returns {Promise<Blob>}
+ */
+export async function exportAs(format, quality, scale) {
+  if (format === 'png') return exportPng(scale);
+  const mime = format === 'jpeg' ? 'image/jpeg' : 'image/webp';
+  const off = document.createElement('canvas');
+  off.width = Math.round(state.width * scale);
+  off.height = Math.round(state.height * scale);
+  const ctx = off.getContext('2d');
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  renderScene(ctx, { forExport: true });
+  return new Promise((resolve, reject) =>
+    off.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error('Export failed: canvas too large or out of memory')),
+      mime,
+      quality
+    )
+  );
+}

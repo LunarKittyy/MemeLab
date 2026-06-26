@@ -3,14 +3,15 @@ import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/l
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
 import { ensureImage } from '../core/state.js';
-import { scheduleRender, resizeStageBuffer, exportPng as renderExportPng } from '../render/renderer.js';
-import { fontsReady } from '../render/fonts.js';
+import { scheduleRender, resizeStageBuffer } from '../render/renderer.js';
 import { selectLayer } from '../interactions/pointer.js';
 import { setIcon } from './icons.js';
 import { wireCustomSelect } from './customSelect.js';
 import { renderLayerList, deleteLayer, duplicateLayer, moveLayerUp, moveLayerDown, moveLayerToTop, moveLayerToBottom, setLastCreatedLayerId } from './layerList.js';
 import { renderPropsPanel } from './props/panel.js';
 import { byId, syncTransformInputs } from './props/shared.js';
+import { quickExport, openExportModal } from './exportModal.js';
+import { openDocumentPanel, syncSizeInputs as docSyncSizeInputs, applyCanvasResize } from './documentPanel.js';
 
 let fileInput = null;
 let pendingImageTarget = null;
@@ -43,36 +44,132 @@ export function addRectLayerAction() {
 }
 
 function handleImageFile(file, target) {
+  const isHeic = /\.(heic|heif)$/i.test(file.name) ||
+    file.type === 'image/heic' || file.type === 'image/heif';
+
+  const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+
+  if (isHeic) {
+    handleHeicFile(file, target);
+    return;
+  }
+  if (isGif) {
+    handleGifFile(file, target);
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = () => {
     const src = reader.result;
-    const probe = new Image();
-    probe.onload = () => {
-      if (target === 'background') {
-        state.background.type = 'image';
-        state.background.src = src;
-        ensureImage(src);
-        if (state.selectedId === 'background') renderPropsPanel();
-      } else if (target && target.type) {
-        target.src = src;
-        target.naturalW = probe.naturalWidth;
-        target.naturalH = probe.naturalHeight;
-        ensureImage(src);
-      } else {
-        const l = defaultImageLayer(src, probe.naturalWidth, probe.naturalHeight);
-        ensureImage(src);
-        state.layers.push(l);
-        setLastCreatedLayerId(l.id);
-        renderLayerList();
-        selectLayer(l.id);
-        openPanelMobile('right', true);
-      }
-      pushHistory('Add image layer');
-      scheduleRender();
-    };
-    probe.src = src;
+    addImageSrc(src, target);
   };
   reader.readAsDataURL(file);
+}
+
+function addImageSrc(src, target) {
+  const probe = new Image();
+  probe.onload = () => {
+    if (target === 'background') {
+      state.background.type = 'image';
+      state.background.src = src;
+      ensureImage(src);
+      if (state.selectedId === 'background') renderPropsPanel();
+    } else if (target && target.type) {
+      target.src = src;
+      target.naturalW = probe.naturalWidth;
+      target.naturalH = probe.naturalHeight;
+      ensureImage(src);
+    } else {
+      const l = defaultImageLayer(src, probe.naturalWidth, probe.naturalHeight);
+      ensureImage(src);
+      state.layers.push(l);
+      setLastCreatedLayerId(l.id);
+      renderLayerList();
+      selectLayer(l.id);
+      openPanelMobile('right', true);
+    }
+    pushHistory('Add image layer');
+    scheduleRender();
+  };
+  probe.src = src;
+}
+
+async function handleHeicFile(file, target) {
+  try {
+    if (typeof heic2any === 'undefined') {
+      // Fall through to normal handling — heic2any not loaded
+      const reader = new FileReader();
+      reader.onload = () => addImageSrc(reader.result, target);
+      reader.readAsDataURL(file);
+      return;
+    }
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    const reader = new FileReader();
+    reader.onload = () => addImageSrc(reader.result, target);
+    reader.readAsDataURL(blob);
+  } catch (err) {
+    console.error('HEIC conversion failed:', err);
+    alert('Could not convert HEIC file: ' + err.message);
+  }
+}
+
+async function handleGifFile(file, target) {
+  try {
+    // Try to use gifuct-js if available
+    if (typeof parseGIF !== 'undefined' && typeof decompressFrames !== 'undefined') {
+      const arrayBuffer = await file.arrayBuffer();
+      const gif = parseGIF(arrayBuffer);
+      const frames = decompressFrames(gif, true);
+
+      if (frames.length <= 1) {
+        // Single-frame GIF — treat as normal image
+        const reader = new FileReader();
+        reader.onload = () => addImageSrc(reader.result, target);
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      // Multi-frame: create one image layer per frame
+      const gW = gif.lsd.width;
+      const gH = gif.lsd.height;
+      let firstId = null;
+
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i];
+        const canvas = document.createElement('canvas');
+        canvas.width = gW; canvas.height = gH;
+        const ctx = canvas.getContext('2d');
+        const imageData = new ImageData(new Uint8ClampedArray(frame.patch), frame.dims.width, frame.dims.height);
+        ctx.putImageData(imageData, frame.dims.left, frame.dims.top);
+        const src = canvas.toDataURL('image/png');
+        ensureImage(src);
+        const l = defaultImageLayer(src, gW, gH);
+        l.name = `Frame ${i + 1}`;
+        l.visible = i === 0; // Only first frame visible initially
+        state.layers.push(l);
+        if (i === 0) firstId = l.id;
+      }
+
+      setLastCreatedLayerId(firstId);
+      renderLayerList();
+      selectLayer(firstId);
+      openPanelMobile('right', true);
+      pushHistory('Import GIF frames');
+      scheduleRender();
+      return;
+    }
+    // gifuct-js not available — import as static image
+    const reader = new FileReader();
+    reader.onload = () => addImageSrc(reader.result, target);
+    reader.readAsDataURL(file);
+  } catch (err) {
+    console.error('GIF import failed:', err);
+    // Fallback: treat as static image
+    const reader = new FileReader();
+    reader.onload = () => addImageSrc(reader.result, target);
+    reader.readAsDataURL(file);
+  }
 }
 
 export function openPanelMobile(side, forceState) {
@@ -118,49 +215,27 @@ function showHint(msg) {
   showHint._t = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
-async function exportPngAndDownload() {
-  await fontsReady();
-  const scale = +(document.getElementById('exportScale').dataset.value) || 1;
-  let blob;
-  try { blob = await renderExportPng(scale); } catch (err) { alert(err.message); return; }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'meme.png';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
+// Quick export is now handled by exportModal.js quickExport()
 
 export function applySizePreset(value) {
   if (value === 'custom') {
-    document.getElementById('customSizeRow').style.display = 'grid';
+    const row = document.getElementById('customSizeRow');
+    if (row) row.style.display = 'grid';
     return;
   }
-  document.getElementById('customSizeRow').style.display = 'none';
+  const row = document.getElementById('customSizeRow');
+  if (row) row.style.display = 'none';
   const [w, h] = value.split('x').map(Number);
-  state.width = w; state.height = h;
-  document.getElementById('customW').value = w;
-  document.getElementById('customH').value = h;
-  resizeStageBuffer();
-  pushHistory('Resize canvas');
+  const wEl = document.getElementById('customW');
+  const hEl = document.getElementById('customH');
+  if (wEl) wEl.value = w;
+  if (hEl) hEl.value = h;
+  applyCanvasResize(w, h, 'canvas');
 }
 
+// Delegate syncSizeInputs to the document panel module
 export function syncSizeInputs() {
-  byId('customW').value = state.width;
-  byId('customH').value = state.height;
-  const preset = byId('sizePreset');
-  const match = `${state.width}x${state.height}`;
-  const matchOpt = preset.querySelector(`.csel-opt[data-value="${match}"]`);
-  if (matchOpt) {
-    preset.dataset.value = match;
-    preset.querySelector('.csel-label').textContent = matchOpt.textContent;
-    preset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o === matchOpt));
-    byId('customSizeRow').style.display = 'none';
-  } else {
-    preset.dataset.value = 'custom';
-    preset.querySelector('.csel-label').textContent = 'Custom…';
-    preset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o.dataset.value === 'custom'));
-    byId('customSizeRow').style.display = 'grid';
-  }
+  docSyncSizeInputs();
 }
 
 
@@ -173,6 +248,9 @@ export function initIcons() {
   setIcon('iconAddRect', 'shape');
   setIcon('btnOpenLeft', 'layers');
   setIcon('btnOpenRight', 'brush');
+  // Document panel icon (may not exist in older HTML)
+  const docIcon = document.getElementById('iconBtnDocument');
+  if (docIcon) setIcon('iconBtnDocument', 'shape'); // reuse shape icon as fallback
 }
 
 export function updateHistoryButtons(canUndo, canRedo) {
@@ -198,31 +276,15 @@ export function wireGlobalUI() {
     fileInput.value = '';
     pendingImageTarget = null;
   });
+  // Accept HEIC in file picker
+  fileInput.setAttribute('accept', 'image/*,.heic,.heif');
 
 
   wireCustomSelect('sizePreset', (v) => applySizePreset(v));
-  const exportSplit = document.getElementById('exportScale');
-  const exportArrow = exportSplit.querySelector('.export-arrow');
-  const exportPopup = exportSplit.querySelector('.export-scale-popup');
-  let exportOpen = false;
-  function closeExportPopup() { exportOpen = false; exportPopup.style.display = 'none'; }
-  exportArrow.addEventListener('click', (e) => {
-    e.stopPropagation();
-    exportOpen = !exportOpen;
-    exportPopup.style.display = exportOpen ? 'block' : 'none';
-  });
-  exportPopup.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const opt = e.target.closest('.csel-opt');
-    if (!opt) return;
-    exportSplit.dataset.value = opt.dataset.value;
-    exportSplit.querySelector('.export-scale-label').textContent = opt.dataset.value + 'x';
-    exportPopup.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o === opt));
-    closeExportPopup();
-  });
-  document.addEventListener('click', closeExportPopup);
-  document.getElementById('customW').addEventListener('change', (e) => { state.width = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
-  document.getElementById('customH').addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 4000); resizeStageBuffer(); pushHistory('Resize canvas'); });
+  const cwEl = document.getElementById('customW');
+  const chEl = document.getElementById('customH');
+  if (cwEl) cwEl.addEventListener('change', (e) => { state.width = clamp(+e.target.value || 1080, 50, 8000); resizeStageBuffer(); pushHistory('Resize canvas'); });
+  if (chEl) chEl.addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 8000); resizeStageBuffer(); pushHistory('Resize canvas'); });
 
   let _resetPending = false, _resetTimer = null;
   document.getElementById('btnReset').addEventListener('click', () => {
@@ -317,7 +379,11 @@ export function wireGlobalUI() {
     // Show states from current onward (so user can see where they're jumping to).
     showHistoryMenu(e.currentTarget, (entry) => entry.index >= currentIdx);
   });
-  document.getElementById('btnExport').addEventListener('click', () => { exportPngAndDownload(); showHint('PNG saved to your downloads'); });
+  document.getElementById('btnExport').addEventListener('click', () => { quickExport(); showHint('Exporting…'); });
+  const exportSettingsBtn = document.getElementById('btnExportSettings');
+  if (exportSettingsBtn) exportSettingsBtn.addEventListener('click', openExportModal);
+  const docBtn = document.getElementById('btnDocument');
+  if (docBtn) docBtn.addEventListener('click', openDocumentPanel);
   document.getElementById('helpClose').addEventListener('click', toggleHelpModal);
 
   document.getElementById('btnOpenLeft').addEventListener('click', () => openPanelMobile('left'));
@@ -328,7 +394,9 @@ export function wireGlobalUI() {
   document.getElementById('canvasArea').addEventListener('drop', (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) handleImageFile(file, null);
+    if (!file) return;
+    const isHeic = /\.(heic|heif)$/i.test(file.name) || file.type === 'image/heic' || file.type === 'image/heif';
+    if (file.type.startsWith('image/') || isHeic) handleImageFile(file, null);
   });
 
   window.addEventListener('keydown', (e) => {

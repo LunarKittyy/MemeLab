@@ -902,4 +902,27 @@ select option {
   padding:3px 8px;pointer-events:auto;z-index:10;}
 .zoom-indicator span{font-size:11px;color:var(--text-dim);min-width:36px;text-align:center;}
 .zoom-reset-btn{background:none;border:none;color:var(--text-dim);font-size:10px;cursor:pointer;padding:0 2px;}
+
+/* ---- Export Modal & Document Panel ---- */
+.export-modal{
+  display:none;position:fixed;inset:0;z-index:10000;
+  background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);
+  align-items:flex-start;justify-content:center;
+  padding-top:64px;
+}
+.export-modal.show{display:flex;}
+.export-modal-inner, .doc-panel-inner{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);
+  min-width:320px;max-width:420px;width:100%;
+  box-shadow:0 24px 60px rgba(0,0,0,0.8);
+  max-height:calc(100vh - 80px);overflow-y:auto;
+}
+.export-modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px 0;
+}
+.export-modal-title{
+  font-size:13px;font-weight:700;color:var(--text);
+  font-family:var(--font-display);letter-spacing:0.05em;text-transform:uppercase;
+}
 .zoom-reset-btn:hover{color:var(--text);}
