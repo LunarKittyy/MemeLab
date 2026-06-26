@@ -8,6 +8,155 @@ import { setPendingImageTarget, triggerFilePicker } from '../toolbar.js';
 import { removeBg } from '../../cutout/aiSegmentation.js';
 import { ICONS } from '../icons.js';
 import { openCropModal } from '../cropModal.js';
+import { FILTER_PRESETS, applyPreset, clearPreset, getActivePresetId } from '../../presets/filters.js';
+import { applyAdjustments } from '../../render/glAdjust.js';
+
+// ---- Filter preset thumbnails ----
+// Map of layerId+presetId -> { canvas, srcKey }
+// srcKey is the layer.src tail used to detect stale entries.
+const _thumbCache = new Map();
+
+function _srcKey(layer) {
+  return layer.src ? layer.src.slice(-32) : '__none__';
+}
+
+function _getCacheKey(layer, presetId) {
+  return layer.id + '|' + presetId;
+}
+
+// Draw a 60x60 thumbnail of the layer's image with a preset's adjustments.
+// Returns a canvas, or null if the image is not loaded yet.
+function _renderThumb(layer, preset) {
+  const img = ensureImage(layer.src);
+  if (!img || !img.complete || !img.naturalWidth) return null;
+
+  const THUMB = 60;
+  // Draw source image into a square thumbnail canvas.
+  const src = document.createElement('canvas');
+  src.width = THUMB; src.height = THUMB;
+  const ctx = src.getContext('2d');
+  // Fit image to square with object-fit:cover logic.
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  const scale = Math.max(THUMB / nw, THUMB / nh);
+  const dw = nw * scale, dh = nh * scale;
+  ctx.drawImage(img, (THUMB - dw) / 2, (THUMB - dh) / 2, dw, dh);
+
+  if (preset.adjustments.length === 0) return src;
+  return applyAdjustments(src, preset.adjustments) || src;
+}
+
+// Populate thumbnail <img> elements lazily, one per animation frame.
+function _scheduleThumbs(layer) {
+  const srcKey = _srcKey(layer);
+  let i = 0;
+
+  function tick() {
+    if (i >= FILTER_PRESETS.length) return;
+    const preset = FILTER_PRESETS[i++];
+    const cacheKey = _getCacheKey(layer, preset.id);
+
+    // Invalidate if layer.src changed.
+    const cached = _thumbCache.get(cacheKey);
+    if (!cached || cached.srcKey !== srcKey) {
+      const canvas = _renderThumb(layer, preset);
+      if (canvas) {
+        _thumbCache.set(cacheKey, { canvas, srcKey });
+        // Push into the <img> in the DOM (if the strip is still rendered).
+        const imgEl = document.querySelector(`.filter-thumb[data-preset="${preset.id}"]`);
+        if (imgEl) imgEl.src = canvas.toDataURL('image/jpeg', 0.7);
+      }
+    } else {
+      // Already cached — push anyway in case the DOM just rerendered.
+      const imgEl = document.querySelector(`.filter-thumb[data-preset="${preset.id}"]`);
+      if (imgEl && !imgEl.src) imgEl.src = cached.canvas.toDataURL('image/jpeg', 0.7);
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+}
+
+function _filterStripHtml(layer) {
+  const activeId = getActivePresetId(layer);
+  const chips = FILTER_PRESETS.map(p => {
+    const isActive = p.id === activeId;
+    // Check for a cached thumb — if available, embed it directly.
+    const cacheKey = _getCacheKey(layer, p.id);
+    const cached = _thumbCache.get(cacheKey);
+    const srcAttr = (cached && cached.srcKey === _srcKey(layer))
+      ? `src="${cached.canvas.toDataURL('image/jpeg', 0.7)}"`
+      : '';
+    return `<div class="filter-chip${isActive ? ' active' : ''}" data-preset-id="${p.id}">
+      <img class="filter-thumb" data-preset="${p.id}" width="60" height="60" ${srcAttr}>
+      <span class="filter-label">${p.label}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="section filter-presets-section">
+    <div class="section-title">Filters</div>
+    <div class="filter-strip" id="filterStrip">${chips}</div>
+  </div>`;
+}
+
+function _wireFilterStrip(layer) {
+  const strip = byId('filterStrip');
+  if (!strip) return;
+
+  strip.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const presetId = chip.dataset.presetId;
+      const preset = FILTER_PRESETS.find(p => p.id === presetId);
+      if (!preset) return;
+
+      if (presetId === 'none') {
+        clearPreset(layer);
+        pushHistory('Clear filter');
+      } else {
+        applyPreset(layer, preset);
+        pushHistory('Apply filter: ' + preset.label);
+      }
+      clearAdjustCache();
+      scheduleRender();
+
+      // Update active highlight without full re-render of props panel.
+      strip.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.presetId === presetId);
+      });
+      // Sync adjustment sliders to match the newly applied preset values.
+      _syncAdjSliders(layer);
+    });
+  });
+
+  // Kick off lazy thumbnail generation.
+  _scheduleThumbs(layer);
+}
+
+// Sync adjustment slider positions to layer.adjustments without triggering events.
+function _syncAdjSliders(layer) {
+  const types = ['brightness', 'contrast', 'saturation'];
+  const idMap = { brightness: 'aiBright', contrast: 'aiContr', saturation: 'aiSat' };
+  for (const type of types) {
+    const a = (layer.adjustments || []).find(x => x.type === type);
+    const v = a ? a.value : 0;
+    const el = byId(idMap[type]);
+    if (el) {
+      el.value = v;
+      const valEl = byId(idMap[type] + 'val');
+      if (valEl) valEl.textContent = v;
+    }
+  }
+}
+
+// Recompute which chip is highlighted after the user manually tweaks a slider.
+function _updateFilterActiveState(layer) {
+  const activeId = getActivePresetId(layer);
+  const strip = byId('filterStrip');
+  if (!strip) return;
+  strip.querySelectorAll('.filter-chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.presetId === activeId);
+  });
+}
 
 function _adjVal(layer, type) {
   const a = (layer.adjustments || []).find(x => x.type === type);
@@ -67,6 +216,7 @@ export function imagePropsHtml(layer) {
       </div>
       <div id="aiError" class="ai-error" style="display:none;"></div>
     </div>
+    ${_filterStripHtml(layer)}
     ${_adjustmentsHtml(layer)}
     ${transformHtml(layer)}
     ${actionsHtml()}`;
@@ -79,6 +229,9 @@ export function wireImageProps(layer) {
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
 
+  // ---- Filter preset strip ----
+  _wireFilterStrip(layer);
+
   // ---- Adjustments ----
   if (!layer.adjustments) layer.adjustments = [];
   function wireAdj(id, type) {
@@ -89,6 +242,8 @@ export function wireImageProps(layer) {
       if (adj) { adj.value = v; } else { layer.adjustments.push({ type, value: v }); }
       clearAdjustCache(layer.id);
       scheduleRender();
+      // After a manual tweak, re-evaluate which preset (if any) is still active.
+      _updateFilterActiveState(layer);
     });
     byId(id).addEventListener('change', () => pushHistory());
   }
