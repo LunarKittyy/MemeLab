@@ -166,7 +166,7 @@ function drawSelectionOverlay(ctx) {
   ctx.setLineDash(layer.locked ? [6 * ds, 4 * ds] : []);
   ctx.strokeRect(-layer.w / 2, -layer.h / 2, layer.w, layer.h);
   ctx.setLineDash([]);
-
+  ctx.restore();
 
   // Draw border-only outlines for secondary selections (when no tool active)
   if (!state.activeTool) {
