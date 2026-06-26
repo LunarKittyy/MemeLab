@@ -1,5 +1,6 @@
 import { state, ensureImage } from './state.js';
 import { clearAdjustCache } from '../render/adjustCache.js';
+import { invalidateAllDrawCaches } from '../render/drawLayer.js';
 
 let history = [];
 let historyIndex = -1;
@@ -54,6 +55,7 @@ export function restoreSnapshot(snap) {
   // Multi-select is transient UI state — always reset on history restore
   state.selectedIds = new Set(state.selectedId && state.selectedId !== 'background' ? [state.selectedId] : []);
   clearAdjustCache();
+  invalidateAllDrawCaches();
   if (state.background.src) ensureImage(state.background.src);
   state.layers.forEach((l) => {
     if (l.type === 'image') {

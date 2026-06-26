@@ -1,5 +1,5 @@
-import { state, getSelected } from '../core/state.js';
-import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultSpeechBubbleLayer } from '../core/layers.js';
+import { state, getSelected, drawState } from '../core/state.js';
+import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultSpeechBubbleLayer, defaultDrawLayer } from '../core/layers.js';
 import { toggleStickerPicker } from './stickerPicker.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
@@ -52,6 +52,17 @@ export function addSpeechBubbleAction() {
   selectLayer(l.id);
   scheduleRender();
   pushHistory('Add speech bubble');
+}
+
+export function addDrawLayerAction() {
+  const l = defaultDrawLayer();
+  state.layers.push(l);
+  setLastCreatedLayerId(l.id);
+  renderLayerList();
+  selectLayer(l.id);
+  drawState.activeTool = 'brush';
+  pushHistory('Add draw layer');
+  openPanelMobile('right', true);
 }
 
 function handleImageFile(file, target) {
@@ -265,6 +276,8 @@ export function initIcons() {
   if (bubbleIconEl) bubbleIconEl.textContent = '💬';
   const stickerIconEl = document.getElementById('iconAddSticker');
   if (stickerIconEl) stickerIconEl.textContent = '😊';
+  const drawIconEl = document.getElementById('iconAddDraw');
+  if (drawIconEl) setIcon('iconAddDraw', 'brush');
 }
 
 export function updateHistoryButtons(canUndo, canRedo) {
@@ -289,6 +302,8 @@ export function wireGlobalUI() {
   if (btnBubble) btnBubble.addEventListener('click', addSpeechBubbleAction);
   const btnSticker = document.getElementById('btnAddSticker');
   if (btnSticker) btnSticker.addEventListener('click', () => toggleStickerPicker(btnSticker));
+  const btnAddDraw = document.getElementById('btnAddDraw');
+  if (btnAddDraw) btnAddDraw.addEventListener('click', addDrawLayerAction);
   fileInput.addEventListener('change', () => {
     if (fileInput.files && fileInput.files[0]) handleImageFile(fileInput.files[0], pendingImageTarget);
     fileInput.value = '';

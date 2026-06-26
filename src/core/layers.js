@@ -1,4 +1,4 @@
-import { state, counters, nextId } from './state.js';
+import { state, counters, nextId, drawState } from './state.js';
 
 export const FONT_OPTIONS = [
   { value: 'FuturaCondXBold', label: 'Futura Condensed ExtraBold' },
@@ -46,6 +46,17 @@ export function defaultImageLayer(src, naturalW, naturalH) {
     crop: { x: 0, y: 0, w: 1, h: 1 },
     mask: { enabled: false, src: null, invert: false, feather: 0 },
     adjustments: [], blendMode: 'normal',
+  };
+}
+
+export function defaultDrawLayer() {
+  counters.draw = (counters.draw || 0) + 1;
+  return {
+    id: nextId(), type: 'draw', name: 'Drawing ' + counters.draw,
+    x: 0, y: 0, w: state.width, h: state.height,
+    rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: false,
+    blendMode: 'normal', adjustments: [],
+    strokes: [],
   };
 }
 

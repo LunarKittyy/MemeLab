@@ -12,7 +12,18 @@ export const state = {
 
 export const imageCache = new Map();
 
-export const counters = { text: 0, image: 0, rect: 0 };
+export const counters = { text: 0, image: 0, rect: 0, draw: 0 };
+
+// Active tool state for draw tools
+export const drawState = {
+  activeTool: 'select', // 'select'|'brush'|'eraser'|'line'|'ellipse'|'polygon'|'gradient'|'bucket'|'eyedropper'
+  brushColor: '#ff0000',
+  brushSize: 20,
+  brushOpacity: 1,
+  brushHardness: 0.8,
+  gradientType: 'linear',
+  gradientColor2: '#0000ff',
+};
 let idSeq = 1;
 
 export function nextId() {

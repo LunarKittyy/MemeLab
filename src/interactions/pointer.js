@@ -1,4 +1,4 @@
-import { state, getSelected, getLayerById, MIN_SIZE } from '../core/state.js';
+import { state, getSelected, getLayerById, MIN_SIZE, drawState } from '../core/state.js';
 import { clamp, deg2rad, rad2deg, rotVec } from '../core/utils.js';
 import { stage, dispScaleFactor, scheduleRender, applyViewportToStage } from '../render/renderer.js';
 import { viewport, resetViewport } from '../core/viewport.js';
@@ -14,6 +14,7 @@ import {
   brushPointerDown, brushPointerMove, brushPointerUp,
   brushDeactivate, brushUpdateCursor, brushClearCursor,
 } from './brushMask.js';
+import { drawToolsPointerDown, drawToolsPointerMove, drawToolsPointerUp } from './drawTools.js';
 
 const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
 
@@ -204,6 +205,15 @@ export function stageEventsInit() {
 
 function onPointerDown(evt) {
   evt.preventDefault();
+
+  // Route to draw tools if a draw tool is active (and the selected layer is a draw layer)
+  const selLayer = getSelected();
+  if (drawState.activeTool && drawState.activeTool !== 'select' && selLayer && selLayer.type === 'draw') {
+    stage.setPointerCapture(evt.pointerId);
+    drawToolsPointerDown(evt);
+    return;
+  }
+
   const p = projectCoords(evt);
   const ds = dispScaleFactor();
 
@@ -313,6 +323,12 @@ function onPointerMove(evt) {
     activeTouches.set(evt.pointerId, projectCoords(evt));
     screenTouches.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
   }
+  // Route to draw tools if active
+  const selLayerMove = getSelected();
+  if (drawState.activeTool && drawState.activeTool !== 'select' && selLayerMove && selLayerMove.type === 'draw') {
+    drawToolsPointerMove(evt);
+    return;
+  }
   if (!drag) return;
   evt.preventDefault();
   const p = projectCoords(evt);
@@ -409,6 +425,12 @@ function onPointerUp(evt) {
   if (evt.pointerType === 'touch') {
     activeTouches.delete(evt.pointerId);
     screenTouches.delete(evt.pointerId);
+  }
+  // Route to draw tools if active
+  const selLayerUp = getSelected();
+  if (drawState.activeTool && drawState.activeTool !== 'select' && selLayerUp && selLayerUp.type === 'draw') {
+    drawToolsPointerUp(evt);
+    return;
   }
   if (!drag) return;
   if ((drag.kind === 'pinch' || drag.kind === 'canvasPinch') && activeTouches.size >= 2) return;
