@@ -25,11 +25,13 @@ export function clearAdjustCache(layerId) {
 function makeSerial(layer) {
   const adjs = layer.adjustments;
   const c = layer.crop || { x: 0, y: 0, w: 1, h: 1 };
+  const pw = layer.perspectiveWarp;
   return JSON.stringify({
     adjs,
     src: layer.src ? layer.src.slice(-32) : null,
     cx: c.x, cy: c.y, cw: c.w, ch: c.h,
     fx: layer.flipX, fy: layer.flipY,
+    pw: pw ? JSON.stringify(pw) : null,
   });
 }
 

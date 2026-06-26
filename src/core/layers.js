@@ -48,6 +48,7 @@ export function defaultImageLayer(src, naturalW, naturalH) {
     crop: { x: 0, y: 0, w: 1, h: 1 },
     mask: { enabled: false, src: null, invert: false, feather: 0 },
     adjustments: [], blendMode: 'normal',
+    perspectiveWarp: null,
   };
 }
 

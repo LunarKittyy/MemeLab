@@ -13,6 +13,8 @@ import { renderPropsPanel } from './props/panel.js';
 import { byId, syncTransformInputs } from './props/shared.js';
 import { quickExport, openExportModal } from './exportModal.js';
 import { openDocumentPanel, syncSizeInputs as docSyncSizeInputs, applyCanvasResize } from './documentPanel.js';
+import { openCanvasCropModal } from './canvasCropModal.js';
+import { openStraightenModal } from './straightenModal.js';
 
 let fileInput = null;
 let pendingImageTarget = null;
@@ -313,6 +315,12 @@ export function wireGlobalUI() {
   // Accept HEIC in file picker
   fileInput.setAttribute('accept', 'image/*,.heic,.heif');
 
+
+  const btnCropCanvas = document.getElementById('btnCropCanvas');
+  if (btnCropCanvas) btnCropCanvas.addEventListener('click', openCanvasCropModal);
+
+  const btnStraighten = document.getElementById('btnStraighten');
+  if (btnStraighten) btnStraighten.addEventListener('click', openStraightenModal);
 
   wireCustomSelect('sizePreset', (v) => applySizePreset(v));
   const cwEl = document.getElementById('customW');

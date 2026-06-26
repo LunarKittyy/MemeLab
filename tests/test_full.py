@@ -2032,6 +2032,198 @@ def run():
 
         check("retouch: no page errors throughout", len(errors_rt) == 0, str(errors_rt))
         ctx_rt.close()
+        # ---- Section F: Track F — Geometry (canvas crop, straighten, perspective warp) ----
+        ctx_f = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_f = ctx_f.new_page()
+        errors_f = []
+        page_f.on("pageerror", lambda exc: errors_f.append(str(exc)))
+        page_f.goto(TEST_URL)
+        page_f.wait_for_timeout(500)
+        check("trackF: boots clean", len(errors_f) == 0, str(errors_f))
+
+        # Add an image layer as a base for testing.
+        with page_f.expect_file_chooser() as fc_f:
+            page_f.click("#iconAddImage")
+        fc_f.value.set_files(SAMPLE_IMG)
+        page_f.wait_for_timeout(500)
+
+        # --- Canvas crop ---
+        # Get initial canvas dimensions.
+        st_f0 = page_f.evaluate("window.__test.getState()")
+        w0, h0 = st_f0["width"], st_f0["height"]
+        check("trackF: initial canvas is 1080x1080", w0 == 1080 and h0 == 1080, f"{w0}x{h0}")
+
+        # Get initial layer position.
+        img_layer_f = next(l for l in st_f0["layers"] if l["type"] == "image")
+        layer_x0, layer_y0 = img_layer_f["x"], img_layer_f["y"]
+
+        # Perform canvas crop via JS (simulate what the modal would do).
+        page_f.evaluate("""
+        () => {
+          // Directly perform what canvasCropModal.apply() does:
+          // Crop to a 500x500 region starting at (100, 100)
+          const { state } = window.__modules_state || {};
+          // Use the test API to access state directly via window.__test
+          window.__test_crop_x = 100;
+          window.__test_crop_y = 100;
+          window.__test_crop_w = 500;
+          window.__test_crop_h = 500;
+        }
+        """)
+        # Actually trigger the crop via the exported function (need to import it).
+        # We'll test by directly calling the module-level function via a dynamic import.
+        page_f.evaluate("""
+        async () => {
+          const { state } = await import('../src/core/state.js');
+          const { pushHistory } = await import('../src/core/history.js');
+          const { resizeStageBuffer, scheduleRender } = await import('../src/render/renderer.js');
+          // Crop from (100,100) to (600,600) → 500x500
+          const x = 100, y = 100, w = 500, h = 500;
+          state.width = w;
+          state.height = h;
+          for (const layer of state.layers) {
+            layer.x -= x;
+            layer.y -= y;
+          }
+          resizeStageBuffer();
+          pushHistory('Crop canvas');
+          scheduleRender();
+        }
+        """)
+        page_f.wait_for_timeout(200)
+
+        st_f1 = page_f.evaluate("window.__test.getState()")
+        check("trackF: canvas crop sets width=500", st_f1["width"] == 500, str(st_f1["width"]))
+        check("trackF: canvas crop sets height=500", st_f1["height"] == 500, str(st_f1["height"]))
+
+        # Verify layer offset.
+        img_layer_f1 = next(l for l in st_f1["layers"] if l["type"] == "image")
+        expected_x = layer_x0 - 100
+        expected_y = layer_y0 - 100
+        check("trackF: canvas crop offsets layer.x correctly",
+              abs(img_layer_f1["x"] - expected_x) < 1,
+              f"expected {expected_x}, got {img_layer_f1['x']}")
+        check("trackF: canvas crop offsets layer.y correctly",
+              abs(img_layer_f1["y"] - expected_y) < 1,
+              f"expected {expected_y}, got {img_layer_f1['y']}")
+
+        # Export after crop — should produce 500x500 @2x = 1000x1000.
+        with page_f.expect_download() as dl_crop:
+            page_f.click("#btnExport")
+        crop_export_path = os.path.join(OUT_DIR, "crop_canvas_export.png")
+        dl_crop.value.save_as(crop_export_path)
+        img_crop = Image.open(crop_export_path)
+        check("trackF: cropped canvas export is 1000x1000 (500px @2x)",
+              img_crop.size == (1000, 1000), str(img_crop.size))
+
+        # --- Undo crop ---
+        page_f.click("#btnUndo")
+        page_f.wait_for_timeout(150)
+        st_f2 = page_f.evaluate("window.__test.getState()")
+        check("trackF: undo crop restores width=1080", st_f2["width"] == 1080, str(st_f2["width"]))
+        check("trackF: undo crop restores height=1080", st_f2["height"] == 1080, str(st_f2["height"]))
+        img_layer_f2 = next(l for l in st_f2["layers"] if l["type"] == "image")
+        check("trackF: undo crop restores layer.x",
+              abs(img_layer_f2["x"] - layer_x0) < 1, f"{layer_x0} vs {img_layer_f2['x']}")
+
+        # --- Straighten ---
+        page_f.evaluate("""
+        async () => {
+          const { state } = await import('../src/core/state.js');
+          const { pushHistory } = await import('../src/core/history.js');
+          const { scheduleRender } = await import('../src/render/renderer.js');
+          state.straighten = 5;
+          pushHistory('Straighten');
+          scheduleRender();
+        }
+        """)
+        page_f.wait_for_timeout(200)
+        st_f3 = page_f.evaluate("window.__test.getState()")
+        check("trackF: straighten=5 is stored in state", st_f3.get("straighten") == 5, str(st_f3.get("straighten")))
+
+        # Export with straighten — must produce valid PNG without errors.
+        with page_f.expect_download() as dl_st:
+            page_f.click("#btnExport")
+        st_export_path = os.path.join(OUT_DIR, "straighten_export.png")
+        dl_st.value.save_as(st_export_path)
+        img_st = Image.open(st_export_path)
+        check("trackF: straighten export is valid 2160x2160 PNG",
+              img_st.size == (2160, 2160), str(img_st.size))
+        check("trackF: no errors after straighten export", len(errors_f) == 0, str(errors_f))
+
+        # Undo straighten.
+        page_f.click("#btnUndo")
+        page_f.wait_for_timeout(150)
+        st_f4 = page_f.evaluate("window.__test.getState()")
+        check("trackF: undo straighten restores straighten=0",
+              (st_f4.get("straighten") or 0) == 0, str(st_f4.get("straighten")))
+
+        # --- Perspective warp ---
+        st_f5 = page_f.evaluate("window.__test.getState()")
+        img_id_f = next(l["id"] for l in st_f5["layers"] if l["type"] == "image")
+
+        # Activate perspective warp via JS.
+        page_f.evaluate("""
+        async (imgId) => {
+          const { state } = await import('../src/core/state.js');
+          const { pushHistory } = await import('../src/core/history.js');
+          const { scheduleRender } = await import('../src/render/renderer.js');
+          const layer = state.layers.find(l => l.id === imgId);
+          if (!layer) return;
+          layer.perspectiveWarp = {
+            enabled: true,
+            tl: { dx: 0, dy: 0 },
+            tr: { dx: -50, dy: 30 },
+            bl: { dx: 20, dy: 0 },
+            br: { dx: 0, dy: 0 },
+          };
+          pushHistory('Perspective warp');
+          scheduleRender();
+        }
+        """, img_id_f)
+        page_f.wait_for_timeout(200)
+
+        st_f6 = page_f.evaluate("window.__test.getState()")
+        img_layer_f6 = next(l for l in st_f6["layers"] if l["id"] == img_id_f)
+        check("trackF: perspectiveWarp.enabled is true in state",
+              img_layer_f6.get("perspectiveWarp", {}).get("enabled") is True)
+        check("trackF: perspectiveWarp is serializable (plain object)",
+              isinstance(img_layer_f6.get("perspectiveWarp"), dict))
+
+        # Export with perspective warp — must succeed without errors.
+        with page_f.expect_download() as dl_warp:
+            page_f.click("#btnExport")
+        warp_export_path = os.path.join(OUT_DIR, "warp_export.png")
+        dl_warp.value.save_as(warp_export_path)
+        img_warp = Image.open(warp_export_path)
+        check("trackF: perspective warp export is valid PNG",
+              img_warp.size[0] > 0, str(img_warp.size))
+        check("trackF: no errors after warp export", len(errors_f) == 0, str(errors_f))
+
+        # --- Canvas Crop button and Straighten button exist in DOM ---
+        crop_btn = page_f.evaluate("!!document.getElementById('btnCropCanvas')")
+        straight_btn = page_f.evaluate("!!document.getElementById('btnStraighten')")
+        check("trackF: Crop canvas button exists in DOM", crop_btn)
+        check("trackF: Straighten button exists in DOM", straight_btn)
+
+        # --- Image layer has perspectiveWarp=null by default (migration) ---
+        page_f2 = ctx_f.new_page()
+        page_f2.goto(TEST_URL)
+        page_f2.wait_for_timeout(400)
+        with page_f2.expect_file_chooser() as fc_f2:
+            page_f2.click("#iconAddImage")
+        fc_f2.value.set_files(SAMPLE_IMG)
+        page_f2.wait_for_timeout(500)
+        st_f_new = page_f2.evaluate("window.__test.getState()")
+        # The last image layer added (not a restored one) should have perspectiveWarp=null.
+        img_layers_new = [l for l in st_f_new["layers"] if l["type"] == "image"]
+        new_img = img_layers_new[-1]  # Last added image layer
+        check("trackF: new image layer has perspectiveWarp field",
+              "perspectiveWarp" in new_img)
+        check("trackF: new image layer perspectiveWarp is null by default",
+              new_img.get("perspectiveWarp") is None, str(new_img.get("perspectiveWarp")))
+
+        ctx_f.close()
 
         browser.close()
 

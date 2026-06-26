@@ -12,6 +12,7 @@ export function snapshot() {
     background: JSON.parse(JSON.stringify(state.background)),
     layers: JSON.parse(JSON.stringify(state.layers)),
     selectedId: state.selectedId,
+    straighten: state.straighten || 0,
   };
 }
 
@@ -54,6 +55,7 @@ export function restoreSnapshot(snap) {
   state.selectedId = clone.selectedId;
   // Multi-select is transient UI state — always reset on history restore
   state.selectedIds = new Set(state.selectedId && state.selectedId !== 'background' ? [state.selectedId] : []);
+  state.straighten = clone.straighten || 0;
   clearAdjustCache();
   invalidateAllDrawCaches();
   if (state.background.src) ensureImage(state.background.src);

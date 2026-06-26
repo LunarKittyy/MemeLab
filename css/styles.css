@@ -895,6 +895,22 @@ select option {
 .crop-footer{display:flex;align-items:center;gap:8px;}
 .crop-apply-btn{background:var(--accent)!important;color:#fff!important;}
 
+/* ---- Canvas Crop Modal ---- */
+.canvas-crop-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);
+  z-index:10000;align-items:center;justify-content:center;}
+.canvas-crop-modal{background:#1a1525;border:1px solid rgba(255,255,255,0.1);border-radius:12px;
+  padding:16px;display:flex;flex-direction:column;gap:10px;max-width:96vw;max-height:96vh;}
+.canvas-crop-presets{display:flex;gap:5px;flex-wrap:wrap;}
+.canvas-crop-preset-btn{padding:3px 8px;font-size:11px;}
+.canvas-crop-preset-btn.active{background:var(--accent)!important;color:#fff!important;}
+.canvas-crop-canvas{display:block;border-radius:6px;cursor:crosshair;max-width:100%;height:auto;}
+.canvas-crop-info{font-size:11px;color:var(--text-dim);text-align:center;}
+
+/* ---- Straighten Modal ---- */
+.straighten-modal{max-width:700px;}
+.straighten-canvas{display:block;border-radius:6px;max-width:100%;height:auto;cursor:default;}
+.straighten-controls{display:flex;flex-direction:column;gap:6px;}
+
 /* Context menu */
 .ctx-menu{position:fixed;z-index:99999;background:var(--panel);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:4px;min-width:160px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:none;}
 .ctx-item{padding:8px 12px;font-size:12.5px;color:var(--text);border-radius:6px;cursor:pointer;transition:background 0.1s;}

@@ -428,6 +428,7 @@ export function imagePropsHtml(layer) {
       <div class="section-title">Image</div>
       <div class="row"><button class="smallbtn full" id="iReplace">Replace image</button></div>
       <div class="row"><button class="smallbtn full" id="iCrop">Crop</button></div>
+      <div class="row"><button class="smallbtn full" id="iWarp">${layer.perspectiveWarp?.enabled ? 'Exit warp' : 'Perspective warp'}</button></div>
       <div class="row">
         <label>Flip</label>
         <div class="seg">
@@ -708,6 +709,20 @@ function _sampleCurve(points, x) {
 export function wireImageProps(layer) {
   byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
   byId('iCrop').addEventListener('click', () => openCropModal(layer));
+  byId('iWarp').addEventListener('click', () => {
+    if (!layer.perspectiveWarp || !layer.perspectiveWarp.enabled) {
+      layer.perspectiveWarp = {
+        enabled: true,
+        tl: { dx: 0, dy: 0 }, tr: { dx: 0, dy: 0 },
+        bl: { dx: 0, dy: 0 }, br: { dx: 0, dy: 0 },
+      };
+    } else {
+      layer.perspectiveWarp.enabled = false;
+    }
+    pushHistory('Perspective warp');
+    renderPropsPanel();
+    scheduleRender();
+  });
   byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
   byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
   byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });

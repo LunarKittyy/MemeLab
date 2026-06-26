@@ -115,8 +115,33 @@ const activeTouches = new Map(); // touch pointerId -> last known canvas-space {
 const screenTouches = new Map(); // touch pointerId -> last known screen-space {x,y}
 
 function handleAt(layer, px, py, ds) {
-  const local = toLocal(layer, px, py);
   const tol = 14 * ds;
+
+  // If perspective warp is active, check warp corner handles first.
+  if (layer.type === 'image' && layer.perspectiveWarp?.enabled) {
+    const pw = layer.perspectiveWarp;
+    const { x, y, w, h } = layer;
+    const cx = x + w / 2, cy = y + h / 2;
+    const rad = deg2rad(layer.rotation);
+    function rotCorner(lx, ly) {
+      const dx = lx - cx, dy = ly - cy;
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+    }
+    const warpCorners = {
+      tl: rotCorner(x + pw.tl.dx, y + pw.tl.dy),
+      tr: rotCorner(x + w + pw.tr.dx, y + pw.tr.dy),
+      bl: rotCorner(x + pw.bl.dx, y + h + pw.bl.dy),
+      br: rotCorner(x + w + pw.br.dx, y + h + pw.br.dy),
+    };
+    for (const key in warpCorners) {
+      const { x: hx, y: hy } = warpCorners[key];
+      if (Math.hypot(px - hx, py - hy) <= tol) return { kind: 'warp', corner: key };
+    }
+    return null;
+  }
+
+  const local = toLocal(layer, px, py);
   const corners = {
     tl: [-layer.w / 2, -layer.h / 2], tr: [layer.w / 2, -layer.h / 2],
     bl: [-layer.w / 2, layer.h / 2], br: [layer.w / 2, layer.h / 2],
@@ -266,9 +291,18 @@ function onPointerDown(evt) {
         const cx = sel.x + sel.w / 2, cy = sel.y + sel.h / 2;
         const startAngle = Math.atan2(p.y - cy, p.x - cx);
         drag = { kind: 'rotate', layer: sel, cx, cy, startAngle, startRotation: sel.rotation };
+      } else if (h.kind === 'warp') {
+        const pw = sel.perspectiveWarp;
+        drag = { kind: 'warp', layer: sel, corner: h.corner, startX: p.x, startY: p.y,
+          dx0: pw[h.corner].dx, dy0: pw[h.corner].dy };
       } else {
         drag = { kind: 'resize', layer: sel, corner: h.corner, x0: sel.x, y0: sel.y, w0: sel.w, h0: sel.h, rotation0: sel.rotation };
       }
+      return;
+    }
+    // In warp mode, block move/selection by checking if the layer is selected and warp is on.
+    if (sel.type === 'image' && sel.perspectiveWarp?.enabled && pointInLayerBounds(sel, p.x, p.y)) {
+      // Absorb the click — don't move, don't deselect.
       return;
     }
     if (!sel.locked && sel.visible && pointInLayerBounds(sel, p.x, p.y)) {
@@ -352,6 +386,17 @@ function onPointerMove(evt) {
     if (Math.hypot(dx, dy) > 3) {
       drag.hasMoved = true;
     }
+  } else if (drag.kind === 'warp') {
+    // Move the warp corner offset by the drag delta (in canvas space, accounting for rotation).
+    const dx = p.x - drag.startX;
+    const dy = p.y - drag.startY;
+    // Convert delta from canvas space to layer-local space (undo rotation).
+    const rad = deg2rad(layer.rotation);
+    const c = Math.cos(-rad), s = Math.sin(-rad);
+    const ldx = dx * c - dy * s;
+    const ldy = dx * s + dy * c;
+    layer.perspectiveWarp[drag.corner].dx = drag.dx0 + ldx;
+    layer.perspectiveWarp[drag.corner].dy = drag.dy0 + ldy;
   } else if (drag.kind === 'pinch') {
     const pts = [...activeTouches.values()];
     if (pts.length < 2 || drag.dist0 < 1e-3) return;
