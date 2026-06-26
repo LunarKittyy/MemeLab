@@ -8,6 +8,7 @@ import { renderPropsPanel } from './ui/props/panel.js';
 import { initIcons, wireGlobalUI, syncSizeInputs, updateHistoryButtons, updateSaveStatusUI } from './ui/toolbar.js';
 import { scheduleAutosave, tryLoadAutosave, onSaveStatusChange } from './persistence/autosave.js';
 import { getSelected } from './core/state.js';
+import { initDocumentPanel } from './ui/documentPanel.js';
 
 onSelectionChange(() => {
   updateLayerListSelection();
@@ -32,6 +33,7 @@ onSaveStatusChange(updateSaveStatusUI);
 
 async function init() {
   bindStage(document.getElementById('stage'));
+  initDocumentPanel();
   initIcons();
   wireGlobalUI();
   stageEventsInit();

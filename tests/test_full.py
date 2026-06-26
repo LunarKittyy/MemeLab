@@ -2366,6 +2366,9 @@ def run():
         }""")
         check("ai-tools: outpaint panel is hidden initially", panel_hidden_initially)
 
+        page_ai.click("#btnDocument")
+        page_ai.wait_for_timeout(300)
+
         page_ai.click("#btnOutpaint")
         page_ai.wait_for_timeout(150)
         panel_shown = page_ai.evaluate("() => document.getElementById('outpaintPanel').style.display !== 'none'")

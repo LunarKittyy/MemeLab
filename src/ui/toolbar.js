@@ -11,7 +11,7 @@ import { renderLayerList, deleteLayer, duplicateLayer, moveLayerUp, moveLayerDow
 import { renderPropsPanel } from './props/panel.js';
 import { byId, syncTransformInputs } from './props/shared.js';
 import { quickExport, openExportModal } from './exportModal.js';
-import { openDocumentPanel, syncSizeInputs as docSyncSizeInputs, applyCanvasResize } from './documentPanel.js';
+import { openDocumentPanel, initDocumentPanel, syncSizeInputs as docSyncSizeInputs, applyCanvasResize } from './documentPanel.js';
 import { openCanvasCropModal } from './canvasCropModal.js';
 import { openStraightenModal } from './straightenModal.js';
 import { outpaintCanvas } from '../cutout/outpaint.js';
@@ -296,6 +296,7 @@ export function updateSaveStatusUI(kind, detail) {
 }
 
 export function wireGlobalUI() {
+  initDocumentPanel();
   fileInput = document.getElementById('fileInput');
   document.getElementById('btnAddText').addEventListener('click', addTextLayerAction);
   document.getElementById('btnAddRect').addEventListener('click', addRectLayerAction);

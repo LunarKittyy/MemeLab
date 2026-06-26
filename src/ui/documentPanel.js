@@ -75,6 +75,32 @@ function buildPanelHtml() {
       </div>
 
       <div class="section" style="border-top:1px solid var(--border);padding-top:12px;">
+        <div class="section-title">Canvas Tools</div>
+        <div style="display:flex;gap:6px;">
+          <button class="smallbtn full" id="btnCropCanvas">Crop canvas</button>
+          <button class="smallbtn full" id="btnStraighten">Straighten</button>
+        </div>
+        <button class="smallbtn full" id="btnReset" style="margin-top:6px;">Reset canvas</button>
+        <button class="smallbtn full" id="btnOutpaint" style="margin-top:6px;">Expand canvas (AI)</button>
+        <div id="outpaintPanel" style="display:none;margin-top:8px;">
+          <div class="sizegrid">
+            <div class="numfield"><span>Top</span><input class="fullinput" type="number" id="outpaintTop" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Btm</span><input class="fullinput" type="number" id="outpaintBottom" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Left</span><input class="fullinput" type="number" id="outpaintLeft" min="0" max="2000" value="128"></div>
+            <div class="numfield"><span>Right</span><input class="fullinput" type="number" id="outpaintRight" min="0" max="2000" value="128"></div>
+          </div>
+          <div id="outpaintProgress" style="display:none;margin-top:6px;">
+            <div class="ai-progress-label" id="outpaintProgressLabel">Loading model…</div>
+            <div class="ai-progress-track"><div class="ai-progress-bar" id="outpaintProgressBar"></div></div>
+          </div>
+          <div id="outpaintError" class="ai-error" style="display:none;"></div>
+          <div class="row" style="margin-top:6px;">
+            <button class="smallbtn full" id="btnOutpaintRun">Run AI expand</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" style="border-top:1px solid var(--border);padding-top:12px;">
         <div class="section-title">Project File</div>
         <div class="row">
           <button class="smallbtn full" id="docSaveProject">Save .meme project</button>
@@ -97,21 +123,26 @@ function getOrCreatePanel() {
   return _panelEl;
 }
 
-export function openDocumentPanel() {
+export function initDocumentPanel() {
   const panel = getOrCreatePanel();
-  panel.innerHTML = buildPanelHtml();
+  if (!panel.innerHTML) {
+    panel.innerHTML = buildPanelHtml();
+    wirePanelEvents(panel);
+    // Wire custom select for size preset
+    wireCustomSelect('docSizePreset', (value) => {
+      if (value === 'custom') return;
+      const [w, h] = value.split('x').map(Number);
+      byId('docCustomW').value = w;
+      byId('docCustomH').value = h;
+    });
+  }
+}
+
+export function openDocumentPanel() {
+  initDocumentPanel();
+  syncSizeInputs();
+  const panel = getOrCreatePanel();
   panel.classList.add('show');
-  wirePanelEvents(panel);
-  // Wire custom select for size preset
-  wireCustomSelect('docSizePreset', (value) => {
-    if (value === 'custom') {
-      // Just show dimensions
-      return;
-    }
-    const [w, h] = value.split('x').map(Number);
-    byId('docCustomW').value = w;
-    byId('docCustomH').value = h;
-  });
 }
 
 function closeDocumentPanel() {
@@ -204,6 +235,24 @@ export function syncSizeInputs() {
   const hEl = byId('docCustomH');
   if (wEl) wEl.value = state.width;
   if (hEl) hEl.value = state.height;
+
+  // Sync document size preset dropdown
+  const docPreset = byId('docSizePreset');
+  if (docPreset) {
+    const match = `${state.width}x${state.height}`;
+    const matchOpt = docPreset.querySelector(`.csel-opt[data-value="${match}"]`);
+    if (matchOpt) {
+      docPreset.dataset.value = match;
+      const labelEl = docPreset.querySelector('.csel-label');
+      if (labelEl) labelEl.textContent = matchOpt.textContent;
+      docPreset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o === matchOpt));
+    } else {
+      docPreset.dataset.value = 'custom';
+      const labelEl = docPreset.querySelector('.csel-label');
+      if (labelEl) labelEl.textContent = 'Custom…';
+      docPreset.querySelectorAll('.csel-opt').forEach(o => o.classList.toggle('csel-opt-sel', o.dataset.value === 'custom'));
+    }
+  }
 
   // Legacy toolbar inputs — keep in sync for backwards compatibility
   const oldW = byId('customW');
