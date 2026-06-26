@@ -5,6 +5,7 @@
 
 import { state } from '../src/core/state.js';
 import { selectLayer, selectLayers, setActiveTool } from '../src/interactions/pointer.js';
+import { selectLayer, computeGuides } from '../src/interactions/pointer.js';
 import { stage, getViewportFitScale } from '../src/render/renderer.js';
 import { viewport } from '../src/core/viewport.js';
 import {
@@ -20,6 +21,23 @@ window.__test = {
     const s = JSON.parse(JSON.stringify(state));
     s.selectedIds = [...state.selectedIds];
     return s;
+    // Include Track-J transient fields too
+    return {
+      ...JSON.parse(JSON.stringify({
+        width: state.width,
+        height: state.height,
+        background: state.background,
+        layers: state.layers,
+        selectedId: state.selectedId,
+      })),
+      showGrid: state.showGrid,
+      showRulers: state.showRulers,
+      gridSize: state.gridSize,
+      snapToGuides: state.snapToGuides,
+      compareMode: state.compareMode,
+      swipeAdjustTarget: state.swipeAdjustTarget,
+      activeGuides: state.activeGuides ? [...state.activeGuides] : [],
+    };
   },
   getSelectedId() {
     return state.selectedId;
@@ -81,5 +99,8 @@ window.__test = {
     gradientPointerDown(startPt);
     gradientPointerUp(endPt);
     await new Promise(r => setTimeout(r, 50));
+  // Track-J: test helper to run computeGuides
+  computeGuides(movingLayer, allLayers) {
+    return computeGuides(movingLayer, allLayers || state.layers);
   },
 };

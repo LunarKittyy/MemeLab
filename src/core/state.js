@@ -1,5 +1,10 @@
 export const MIN_SIZE = 12;
 
+// Load UI preferences from localStorage (not in history snapshots).
+function _loadPref(key, fallback) {
+  try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+
 export const state = {
   width: 1080,
   height: 1080,
@@ -9,7 +14,24 @@ export const state = {
   selectedIds: new Set(), // Set<string> — full multi-select set (transient UI state, never persisted)
   activeTool: null,       // 'lasso'|'polygon'|'wand'|'brushMask'|'gradientMask'|null
   straighten: 0,
+  selectedId: null,
+
+  // ---- Track-J: UI preferences (persisted to localStorage, NOT in history) ----
+  showGrid: _loadPref('ml_showGrid', false),
+  gridSize: _loadPref('ml_gridSize', 100),   // canvas px per cell
+  showRulers: _loadPref('ml_showRulers', false),
+  snapToGuides: _loadPref('ml_snapToGuides', true),
+
+  // ---- Track-J: transient (never persisted) ----
+  compareMode: null,         // null | 'toggle' | 'split'
+  swipeAdjustTarget: null,   // element id of focused range slider, or null
+  activeGuides: [],          // guide lines visible during current drag
+  compareSplitX: null,       // fractional 0..1 split position (null = 0.5)
 };
+
+export function saveUIPref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
 
 export const imageCache = new Map();
 

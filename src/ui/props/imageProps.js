@@ -410,6 +410,8 @@ function _maskToolsHtml() {
         <div class="row"><button class="smallbtn full danger" id="iPolyCancel">Cancel polygon</button></div>
       </div>
     </div>`;
+    <div class="row" style="margin-top:6px;font-size:11px;color:var(--text-faint);">Swipe on canvas to adjust focused slider</div>`;
+  return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
 }
 
 export function imagePropsHtml(layer) {
@@ -425,12 +427,21 @@ export function imagePropsHtml(layer) {
       ${rangeRow('Feather', 'iMaskFeather', 0, 50, 1, mask.feather ?? 0)}
       <div class="row" style="margin-top:6px;"><button class="smallbtn full danger" id="iMaskClear">Clear mask</button></div>
     </div>`;
+  const compareActive = state.compareMode === 'toggle';
+  const compareSplitActive = state.compareMode === 'split';
   return `
     <div class="section">
       <div class="section-title">Image</div>
       <div class="row"><button class="smallbtn full" id="iReplace">Replace image</button></div>
       <div class="row"><button class="smallbtn full" id="iCrop">Crop</button></div>
       <div class="row"><button class="smallbtn full" id="iWarp">${layer.perspectiveWarp?.enabled ? 'Exit warp' : 'Perspective warp'}</button></div>
+      <div class="row">
+        <label>Compare</label>
+        <div class="seg">
+          <button id="iCompareToggle" class="${compareActive ? 'active' : ''}">Toggle</button>
+          <button id="iCompareSplit" class="${compareSplitActive ? 'active' : ''}">Split</button>
+        </div>
+      </div>
       <div class="row">
         <label>Flip</label>
         <div class="seg">
@@ -475,6 +486,25 @@ export function imagePropsHtml(layer) {
 }
 
 // ─── Wire adjustments ─────────────────────────────────────────────────────
+export function wireImageProps(layer) {
+  byId('iReplace').addEventListener('click', () => { setPendingImageTarget(layer); triggerFilePicker(); });
+  byId('iCrop').addEventListener('click', () => openCropModal(layer));
+
+  // ---- Track-J: before/after compare ----
+  byId('iCompareToggle').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'toggle' ? null : 'toggle';
+    renderPropsPanel();
+    scheduleRender();
+  });
+  byId('iCompareSplit').addEventListener('click', () => {
+    state.compareMode = state.compareMode === 'split' ? null : 'split';
+    renderPropsPanel();
+    scheduleRender();
+  });
+
+  byId('iFlipH').addEventListener('click', () => { layer.flipX = !layer.flipX; renderPropsPanel(); scheduleRender(); pushHistory('Flip horizontal'); });
+  byId('iFlipV').addEventListener('click', () => { layer.flipY = !layer.flipY; renderPropsPanel(); scheduleRender(); pushHistory('Flip vertical'); });
+  byId('iAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
 
 // Returns a function that safely re-renders the dynamic slider region
 // and syncs the base slider values.
@@ -746,6 +776,18 @@ export function wireImageProps(layer) {
   if (!layer.adjustments) layer.adjustments = [];
 
 
+
+  // ---- Track-J: swipe-adjust focus/blur wiring ----
+  function wireSwipeAdj(id) {
+    byId(id).addEventListener('focus', () => { state.swipeAdjustTarget = id; _showSwipeHint(); });
+    byId(id).addEventListener('blur',  () => { if (state.swipeAdjustTarget === id) state.swipeAdjustTarget = null; });
+  }
+  wireAdj('aiBright', 'brightness');
+  wireAdj('aiContr',  'contrast');
+  wireAdj('aiSat',    'saturation');
+  wireSwipeAdj('aiBright');
+  wireSwipeAdj('aiContr');
+  wireSwipeAdj('aiSat');
   wireCollapsible('adjSection');
   wireCollapsible('adjTone');
   wireCollapsible('adjEffects');
@@ -921,6 +963,30 @@ function _runAutoEnhance(layer, rerenderSliders) {
 }
 
 // ─── Progress / AI helpers (unchanged from Phase 0) ───────────────────────
+// ---- Track-J: swipe hint overlay ----
+let _swipeHintEl = null;
+let _swipeHintTimer = null;
+function _showSwipeHint() {
+  if (!_swipeHintEl) {
+    _swipeHintEl = document.createElement('div');
+    _swipeHintEl.style.cssText = [
+      'position:absolute', 'bottom:32px', 'left:50%', 'transform:translateX(-50%)',
+      'background:rgba(0,0,0,0.7)', 'color:#fff', 'font-size:12px', 'padding:6px 14px',
+      'border-radius:20px', 'pointer-events:none', 'z-index:100',
+      'display:flex', 'align-items:center', 'gap:8px', 'white-space:nowrap',
+      'transition:opacity 0.3s',
+    ].join(';');
+    _swipeHintEl.innerHTML = '&#8596; Swipe canvas left/right to adjust';
+    const area = document.getElementById('canvasArea');
+    if (area) { area.style.position = 'relative'; area.appendChild(_swipeHintEl); }
+  }
+  _swipeHintEl.style.opacity = '1';
+  clearTimeout(_swipeHintTimer);
+  _swipeHintTimer = setTimeout(() => {
+    if (_swipeHintEl) _swipeHintEl.style.opacity = '0';
+  }, 2000);
+}
+
 function setProgress(label, pct) {
   const prog = byId('aiProgress');
   if (!prog) return;

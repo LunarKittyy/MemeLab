@@ -16,6 +16,32 @@ import {
 } from './brushMask.js';
 import { drawToolsPointerDown, drawToolsPointerMove, drawToolsPointerUp } from './drawTools.js';
 
+// ---- Track-J: smart guide computation ----
+export function computeGuides(movingLayer, allLayers) {
+  const guides = [];
+  const W = state.width, H = state.height;
+
+  // Canvas edges and center
+  guides.push({ x: 0 }, { x: W }, { x: W / 2 });
+  guides.push({ y: 0 }, { y: H }, { y: H / 2 });
+
+  for (const layer of allLayers) {
+    if (!layer.visible || layer.id === movingLayer.id) continue;
+    // horizontal snaps: left, center-x, right of other layer
+    guides.push({ x: layer.x }, { x: layer.x + layer.w / 2 }, { x: layer.x + layer.w });
+    // vertical snaps: top, center-y, bottom of other layer
+    guides.push({ y: layer.y }, { y: layer.y + layer.h / 2 }, { y: layer.y + layer.h });
+
+    // also snap moving layer's RIGHT/BOTTOM to other layer's LEFT/TOP
+    guides.push({ x: layer.x, forRight: true }, { x: layer.x + layer.w, forRight: true });
+    guides.push({ y: layer.y, forBottom: true }, { y: layer.y + layer.h, forBottom: true });
+  }
+  return guides;
+}
+
+// ---- Track-J: swipe-adjust state ----
+let lastSwipeX = 0;
+
 const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
 
 export function applyZoom(factor, originX, originY) {
@@ -258,6 +284,19 @@ function onPointerDown(evt) {
       gradientPointerDown(p);
     }
     return;
+  // ---- Track-J: init swipe-adjust last position ----
+  lastSwipeX = evt.clientX;
+
+  // ---- Track-J: draggable split-compare handle ----
+  if (state.compareMode === 'split') {
+    const splitFrac = state.compareSplitX != null ? state.compareSplitX : 0.5;
+    const splitX = splitFrac * state.width;
+    const tolerance = 20 * ds;
+    if (Math.abs(p.x - splitX) <= tolerance) {
+      drag = { kind: 'compareSplit' };
+      return;
+    }
+    return; // in split mode, don't interact with layers
   }
 
   if (evt.pointerType === 'touch') {
@@ -363,9 +402,30 @@ function onPointerMove(evt) {
     drawToolsPointerMove(evt);
     return;
   }
+
+  // ---- Track-J: swipe-adjust (no active drag needed) ----
+  if (state.swipeAdjustTarget && !drag) {
+    const deltaX = evt.clientX - lastSwipeX;
+    const slider = document.getElementById(state.swipeAdjustTarget);
+    if (slider && Math.abs(deltaX) > 0) {
+      const range = +slider.max - +slider.min;
+      slider.value = clamp(+slider.value + deltaX * (range / 300), +slider.min, +slider.max);
+      slider.dispatchEvent(new Event('input'));
+    }
+  }
+  lastSwipeX = evt.clientX;
+
   if (!drag) return;
   evt.preventDefault();
   const p = projectCoords(evt);
+
+  // ---- Track-J: split compare dragging ----
+  if (drag.kind === 'compareSplit') {
+    state.compareSplitX = clamp(p.x / state.width, 0.02, 0.98);
+    scheduleRender();
+    return;
+  }
+
   const layer = drag.layer;
 
   if (drag.kind === 'move') {
@@ -397,6 +457,46 @@ function onPointerMove(evt) {
     const ldy = dx * s + dy * c;
     layer.perspectiveWarp[drag.corner].dx = drag.dx0 + ldx;
     layer.perspectiveWarp[drag.corner].dy = drag.dy0 + ldy;
+
+    // ---- Track-J: smart guides snapping ----
+    state.activeGuides = [];
+    if (state.snapToGuides) {
+      const threshold = 8 / viewport.zoom;
+      const guides = computeGuides(layer, state.layers);
+      for (const guide of guides) {
+        if (guide.x !== undefined) {
+          // snap left edge, center, or right edge of moving layer
+          const leftEdge = layer.x;
+          const centerX = layer.x + layer.w / 2;
+          const rightEdge = layer.x + layer.w;
+          if (Math.abs(leftEdge - guide.x) < threshold && !guide.forRight) {
+            layer.x = guide.x;
+            state.activeGuides.push({ x: guide.x });
+          } else if (Math.abs(centerX - guide.x) < threshold && !guide.forRight) {
+            layer.x = guide.x - layer.w / 2;
+            state.activeGuides.push({ x: guide.x });
+          } else if (Math.abs(rightEdge - guide.x) < threshold) {
+            layer.x = guide.x - layer.w;
+            state.activeGuides.push({ x: guide.x });
+          }
+        }
+        if (guide.y !== undefined) {
+          const topEdge = layer.y;
+          const centerY = layer.y + layer.h / 2;
+          const bottomEdge = layer.y + layer.h;
+          if (Math.abs(topEdge - guide.y) < threshold && !guide.forBottom) {
+            layer.y = guide.y;
+            state.activeGuides.push({ y: guide.y });
+          } else if (Math.abs(centerY - guide.y) < threshold && !guide.forBottom) {
+            layer.y = guide.y - layer.h / 2;
+            state.activeGuides.push({ y: guide.y });
+          } else if (Math.abs(bottomEdge - guide.y) < threshold) {
+            layer.y = guide.y - layer.h;
+            state.activeGuides.push({ y: guide.y });
+          }
+        }
+      }
+    }
   } else if (drag.kind === 'pinch') {
     const pts = [...activeTouches.values()];
     if (pts.length < 2 || drag.dist0 < 1e-3) return;
@@ -483,7 +583,11 @@ function onPointerUp(evt) {
   const d = drag;
   drag = null;
 
+  // ---- Track-J: clear smart guides on drag end ----
+  state.activeGuides = [];
+
   if (d.kind === 'canvasPinch') return;
+  if (d.kind === 'compareSplit') { scheduleRender(); return; }
 
   if (d.kind === 'move' && !d.hasMoved) {
     // Restore original positions (relevant when multi-select was active)

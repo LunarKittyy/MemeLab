@@ -350,6 +350,138 @@ function _bakeSourceForDrawLayer(targetLayer) {
   return src;
 }
 
+// ---- Track-J: Grid overlay ----
+function drawGrid(ctx, W, H) {
+  const cellPx = state.gridSize * viewport.zoom * _fitScale;
+  if (cellPx < 4) return; // too dense to be useful
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= W; x += cellPx) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y <= H; y += cellPx) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---- Track-J: Smart guides overlay ----
+function drawActiveGuides(ctx, W, H) {
+  if (!state.activeGuides || !state.activeGuides.length) return;
+  const ds = dispScaleFactor();
+  ctx.save();
+  ctx.strokeStyle = '#00CFFF';
+  ctx.lineWidth = 1 * ds;
+  ctx.setLineDash([4 * ds, 3 * ds]);
+  for (const guide of state.activeGuides) {
+    if (guide.x !== undefined) {
+      ctx.beginPath(); ctx.moveTo(guide.x, 0); ctx.lineTo(guide.x, H); ctx.stroke();
+    }
+    if (guide.y !== undefined) {
+      ctx.beginPath(); ctx.moveTo(0, guide.y); ctx.lineTo(W, guide.y); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ---- Track-J: Rulers overlay (DOM-based, drawn separately via updateRulers) ----
+let _rulerH = null; // top ruler canvas
+let _rulerV = null; // left ruler canvas
+
+export function updateRulers() {
+  if (!state.showRulers) {
+    if (_rulerH) _rulerH.style.display = 'none';
+    if (_rulerV) _rulerV.style.display = 'none';
+    return;
+  }
+  if (!stage) return;
+  const stageRect = stage.getBoundingClientRect();
+  const W = stageRect.width, H = stageRect.height;
+  const RULER_SIZE = 18;
+  const canvasW = state.width, canvasH = state.height;
+  const unitPx = viewport.zoom * _fitScale; // screen px per canvas px
+
+  // Create ruler canvases if needed
+  const area = document.getElementById('canvasArea');
+  if (!area) return;
+  if (!_rulerH) {
+    _rulerH = document.createElement('canvas');
+    _rulerH.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:10;';
+    area.appendChild(_rulerH);
+  }
+  if (!_rulerV) {
+    _rulerV = document.createElement('canvas');
+    _rulerV.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:10;';
+    area.appendChild(_rulerV);
+  }
+  _rulerH.style.display = 'block';
+  _rulerV.style.display = 'block';
+
+  // Position rulers relative to the stage
+  const areaRect = area.getBoundingClientRect();
+  const stageLeft = stageRect.left - areaRect.left;
+  const stageTop = stageRect.top - areaRect.top;
+
+  // Horizontal ruler (top)
+  _rulerH.width = Math.round(W);
+  _rulerH.height = RULER_SIZE;
+  _rulerH.style.left = stageLeft + 'px';
+  _rulerH.style.top = (stageTop - RULER_SIZE) + 'px';
+  _rulerH.style.width = W + 'px';
+  _rulerH.style.height = RULER_SIZE + 'px';
+  _drawRuler(_rulerH.getContext('2d'), W, RULER_SIZE, 'h', canvasW, unitPx);
+
+  // Vertical ruler (left)
+  _rulerV.width = RULER_SIZE;
+  _rulerV.height = Math.round(H);
+  _rulerV.style.left = (stageLeft - RULER_SIZE) + 'px';
+  _rulerV.style.top = stageTop + 'px';
+  _rulerV.style.width = RULER_SIZE + 'px';
+  _rulerV.style.height = H + 'px';
+  _drawRuler(_rulerV.getContext('2d'), RULER_SIZE, H, 'v', canvasH, unitPx);
+}
+
+function _drawRuler(ctx, w, h, axis, canvasUnits, unitPx) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(18,18,22,0.92)';
+  ctx.fillRect(0, 0, w, h);
+
+  // pick a tick interval that keeps ticks >=20px apart in screen space
+  const intervals = [10, 25, 50, 100, 200, 500];
+  let interval = intervals.find(i => i * unitPx >= 20) || 500;
+  const len = axis === 'h' ? w : h;
+
+  ctx.fillStyle = 'rgba(161,161,170,0.8)';
+  ctx.strokeStyle = 'rgba(161,161,170,0.5)';
+  ctx.lineWidth = 0.5;
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  for (let u = 0; u <= canvasUnits; u += interval) {
+    const pos = u * unitPx;
+    if (pos > len + 1) break;
+    ctx.beginPath();
+    if (axis === 'h') {
+      ctx.moveTo(pos, h - 5); ctx.lineTo(pos, h);
+    } else {
+      ctx.moveTo(w - 5, pos); ctx.lineTo(w, pos);
+    }
+    ctx.stroke();
+    if (axis === 'h') {
+      ctx.fillText(u, pos + 2, 1);
+    } else {
+      ctx.save();
+      ctx.translate(w - 1, pos + 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(u, 0, 0);
+      ctx.restore();
+    }
+  }
+}
+
 let backdropCanvas = null;
 let backdropCtx = null;
 
@@ -395,6 +527,11 @@ export function renderScene(ctx, opts) {
   opts = opts || {};
   const W = state.width, H = state.height;
   ctx.clearRect(0, 0, W, H);
+
+  // ---- Track-J: before/after compare toggle ----
+  // When compareMode === 'toggle', draw the original (no adjustments, no mask).
+  const isToggleCompare = !opts.forExport && state.compareMode === 'toggle';
+
   if (state.background.type === 'image' && state.background.src) {
     const img = ensureImage(state.background.src);
     if (img && img.complete && img.naturalWidth) {
@@ -419,6 +556,19 @@ export function renderScene(ctx, opts) {
     ctx.restore();
   } else {
     for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
+  for (const layer of state.layers) {
+    if (isToggleCompare && layer.type === 'image') {
+      // Draw original: no adjustments, no mask
+      const savedAdj = layer.adjustments;
+      const savedMask = layer.mask;
+      layer.adjustments = [];
+      layer.mask = layer.mask ? { ...layer.mask, enabled: false } : { enabled: false, src: null };
+      drawLayer(ctx, layer, backdrop);
+      layer.adjustments = savedAdj;
+      layer.mask = savedMask;
+    } else {
+      drawLayer(ctx, layer, backdrop);
+    }
   }
   if (!opts.forExport) drawSelectionOverlay(ctx);
 }
@@ -436,7 +586,81 @@ export function scheduleRender() {
 
 function doRender() {
   stageCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  renderScene(stageCtx, { forExport: false });
+  const W = state.width, H = state.height;
+
+  if (state.compareMode === 'split') {
+    // Render processed scene to offscreen A
+    const offA = document.createElement('canvas');
+    offA.width = W; offA.height = H;
+    renderScene(offA.getContext('2d'), { forExport: false });
+
+    // Render original (no adjustments, no mask) to offscreen B
+    const offB = document.createElement('canvas');
+    offB.width = W; offB.height = H;
+    const bCtx = offB.getContext('2d');
+    // Draw background
+    if (state.background.type === 'image' && state.background.src) {
+      const img = ensureImage(state.background.src);
+      if (img && img.complete && img.naturalWidth) drawCover(bCtx, img, 0, 0, W, H, state.background.fit);
+      else { bCtx.fillStyle = '#ffffff'; bCtx.fillRect(0, 0, W, H); }
+    } else { bCtx.fillStyle = state.background.color; bCtx.fillRect(0, 0, W, H); }
+    for (const layer of state.layers) {
+      if (layer.type === 'image') {
+        const savedAdj = layer.adjustments;
+        const savedMask = layer.mask;
+        layer.adjustments = [];
+        layer.mask = layer.mask ? { ...layer.mask, enabled: false } : { enabled: false, src: null };
+        drawLayer(bCtx, layer, null);
+        layer.adjustments = savedAdj;
+        layer.mask = savedMask;
+      } else {
+        drawLayer(bCtx, layer, null);
+      }
+    }
+
+    // Composite onto stage: left=processed (A), right=original (B)
+    const splitFrac = state.compareSplitX != null ? state.compareSplitX : 0.5;
+    const splitX = Math.round(W * splitFrac);
+    stageCtx.clearRect(0, 0, W, H);
+    // Left half: current
+    stageCtx.save();
+    stageCtx.beginPath(); stageCtx.rect(0, 0, splitX, H); stageCtx.clip();
+    stageCtx.drawImage(offA, 0, 0);
+    stageCtx.restore();
+    // Right half: original
+    stageCtx.save();
+    stageCtx.beginPath(); stageCtx.rect(splitX, 0, W - splitX, H); stageCtx.clip();
+    stageCtx.drawImage(offB, 0, 0);
+    stageCtx.restore();
+    // Divider
+    stageCtx.save();
+    stageCtx.strokeStyle = '#ffffff';
+    stageCtx.lineWidth = 2 * dispScaleFactor();
+    stageCtx.beginPath(); stageCtx.moveTo(splitX, 0); stageCtx.lineTo(splitX, H); stageCtx.stroke();
+    // Handle circle
+    const midY = H / 2;
+    stageCtx.fillStyle = '#ffffff';
+    stageCtx.beginPath(); stageCtx.arc(splitX, midY, 12 * dispScaleFactor(), 0, Math.PI * 2); stageCtx.fill();
+    stageCtx.strokeStyle = '#888'; stageCtx.lineWidth = 1 * dispScaleFactor(); stageCtx.stroke();
+    // Arrows on handle
+    stageCtx.fillStyle = '#555';
+    const r = 12 * dispScaleFactor(), ax = 4 * dispScaleFactor();
+    stageCtx.beginPath();
+    stageCtx.moveTo(splitX - ax, midY - ax * 0.7); stageCtx.lineTo(splitX - r * 0.55, midY); stageCtx.lineTo(splitX - ax, midY + ax * 0.7); stageCtx.fill();
+    stageCtx.beginPath();
+    stageCtx.moveTo(splitX + ax, midY - ax * 0.7); stageCtx.lineTo(splitX + r * 0.55, midY); stageCtx.lineTo(splitX + ax, midY + ax * 0.7); stageCtx.fill();
+    stageCtx.restore();
+  } else {
+    renderScene(stageCtx, { forExport: false });
+  }
+
+  // ---- Track-J: grid overlay (not in exports) ----
+  if (state.showGrid) drawGrid(stageCtx, W, H);
+  // ---- Track-J: smart guides overlay ----
+  if (state.activeGuides && state.activeGuides.length) drawActiveGuides(stageCtx, W, H);
+  // ---- Track-J: rulers ----
+  updateRulers();
+
   updateThumbnails();
 }
 
