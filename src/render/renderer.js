@@ -3,6 +3,7 @@ import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
 import { viewport, resetViewport } from '../core/viewport.js';
+import { overlay } from '../interactions/toolOverlay.js';
 
 export let stage = null;
 let stageCtx = null;
@@ -52,54 +53,156 @@ function drawLayer(ctx, layer, backdrop) {
 
 function drawSelectionOverlay(ctx) {
   const layer = getSelected();
-  if (!layer) return;
   const ds = dispScaleFactor();
 
-  // Draw simple border-only outlines for secondary selections (all in selectedIds except primary)
-  for (const id of state.selectedIds) {
-    if (id === state.selectedId) continue; // primary drawn below with full handles
-    const sl = state.layers.find(l => l.id === id);
-    if (!sl) continue;
+  // Draw border-only outlines for secondary selections (when no tool active)
+  if (!state.activeTool) {
+    for (const id of state.selectedIds) {
+      if (id === state.selectedId) continue;
+      const sl = state.layers.find(l => l.id === id);
+      if (!sl) continue;
+      ctx.save();
+      const scx = sl.x + sl.w / 2, scy = sl.y + sl.h / 2;
+      ctx.translate(scx, scy);
+      ctx.rotate(deg2rad(sl.rotation));
+      ctx.strokeStyle = 'rgba(255, 61, 138, 0.55)';
+      ctx.lineWidth = 1.4 * ds;
+      ctx.setLineDash([4 * ds, 3 * ds]);
+      ctx.strokeRect(-sl.w / 2, -sl.h / 2, sl.w, sl.h);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  // ---- Draw standard transform handles when no tool is active ----
+  if (!state.activeTool && layer) {
     ctx.save();
-    const scx = sl.x + sl.w / 2, scy = sl.y + sl.h / 2;
-    ctx.translate(scx, scy);
-    ctx.rotate(deg2rad(sl.rotation));
-    ctx.strokeStyle = 'rgba(255, 61, 138, 0.55)';
-    ctx.lineWidth = 1.4 * ds;
-    ctx.setLineDash([4 * ds, 3 * ds]);
-    ctx.strokeRect(-sl.w / 2, -sl.h / 2, sl.w, sl.h);
+    const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(deg2rad(layer.rotation));
+    ctx.strokeStyle = '#FF3D8A';
+    ctx.lineWidth = 1.6 * ds;
+    ctx.setLineDash(layer.locked ? [6 * ds, 4 * ds] : []);
+    ctx.strokeRect(-layer.w / 2, -layer.h / 2, layer.w, layer.h);
     ctx.setLineDash([]);
+
+    if (!layer.locked) {
+      const hs = 9 * ds;
+      const corners = [[-layer.w / 2, -layer.h / 2], [layer.w / 2, -layer.h / 2], [-layer.w / 2, layer.h / 2], [layer.w / 2, layer.h / 2]];
+      corners.forEach(([x, y]) => {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+        ctx.lineWidth = 1.6 * ds; ctx.strokeStyle = '#FF3D8A';
+        ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
+      });
+      const rhY = -layer.h / 2 - 30 * ds;
+      ctx.beginPath(); ctx.moveTo(0, -layer.h / 2); ctx.lineTo(0, rhY);
+      ctx.strokeStyle = '#FF3D8A'; ctx.lineWidth = 1.6 * ds; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, rhY, hs * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.lineWidth = 1.6 * ds; ctx.strokeStyle = '#FF3D8A'; ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // ---- Tool overlays ----
+  if (!state.activeTool) return;
+  const tool = state.activeTool;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1.5 * ds;
+  ctx.setLineDash([5 * ds, 4 * ds]);
+
+  if (tool === 'lasso' && overlay.lassoPoints.length >= 2) {
+    ctx.beginPath();
+    ctx.moveTo(overlay.lassoPoints[0].x, overlay.lassoPoints[0].y);
+    for (let i = 1; i < overlay.lassoPoints.length; i++) {
+      ctx.lineTo(overlay.lassoPoints[i].x, overlay.lassoPoints[i].y);
+    }
+    ctx.stroke();
+  }
+
+  if (tool === 'polygon' && overlay.polygonVertices.length >= 1) {
+    ctx.beginPath();
+    ctx.moveTo(overlay.polygonVertices[0].x, overlay.polygonVertices[0].y);
+    for (let i = 1; i < overlay.polygonVertices.length; i++) {
+      ctx.lineTo(overlay.polygonVertices[i].x, overlay.polygonVertices[i].y);
+    }
+    if (overlay.cursorPos && overlay.polygonOpen) {
+      ctx.lineTo(overlay.cursorPos.x, overlay.cursorPos.y);
+    }
+    ctx.stroke();
+    // Draw vertex dots
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffffff';
+    const dotR = 4 * ds;
+    for (const v of overlay.polygonVertices) {
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Highlight close zone on first vertex
+    if (overlay.polygonVertices.length >= 3 && overlay.cursorPos) {
+      const dist = Math.hypot(overlay.cursorPos.x - overlay.polygonVertices[0].x, overlay.cursorPos.y - overlay.polygonVertices[0].y);
+      if (dist <= 20) {
+        ctx.beginPath();
+        ctx.arc(overlay.polygonVertices[0].x, overlay.polygonVertices[0].y, 10 * ds, 0, Math.PI * 2);
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2 * ds;
+        ctx.stroke();
+      }
+    }
+  }
+
+  if (tool === 'gradientMask' && overlay.gradientStart) {
+    ctx.setLineDash([4 * ds, 3 * ds]);
+    const end = overlay.gradientEnd || overlay.cursorPos;
+    if (end) {
+      ctx.beginPath();
+      ctx.moveTo(overlay.gradientStart.x, overlay.gradientStart.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.stroke();
+      // Arrow head at end
+      const dx = end.x - overlay.gradientStart.x, dy = end.y - overlay.gradientStart.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 5) {
+        const ux = dx / len, uy = dy / len;
+        const aw = 8 * ds;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(end.x, end.y);
+        ctx.lineTo(end.x - ux * aw - uy * aw * 0.5, end.y - uy * aw + ux * aw * 0.5);
+        ctx.lineTo(end.x - ux * aw + uy * aw * 0.5, end.y - uy * aw - ux * aw * 0.5);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fill();
+      }
+    }
+    // Start dot
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(overlay.gradientStart.x, overlay.gradientStart.y, 5 * ds, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // ---- Brush cursor: a circle at the current cursor position ----
+  if (tool === 'brushMask' && overlay.brushCursorPos) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(overlay.brushCursorPos.x, overlay.brushCursorPos.y, overlay.brushSize, 0, Math.PI * 2);
+    ctx.strokeStyle = overlay.brushMode === 'reveal' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)';
+    ctx.lineWidth = 1.5 * ds;
+    ctx.setLineDash([3 * ds, 2 * ds]);
+    ctx.stroke();
     ctx.restore();
   }
-
-  // Draw full selection handles for the primary selected layer
-  ctx.save();
-  const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
-  ctx.translate(cx, cy);
-  ctx.rotate(deg2rad(layer.rotation));
-  ctx.strokeStyle = '#FF3D8A';
-  ctx.lineWidth = 1.6 * ds;
-  ctx.setLineDash(layer.locked ? [6 * ds, 4 * ds] : []);
-  ctx.strokeRect(-layer.w / 2, -layer.h / 2, layer.w, layer.h);
-  ctx.setLineDash([]);
-
-  if (!layer.locked) {
-    const hs = 9 * ds;
-    const corners = [[-layer.w / 2, -layer.h / 2], [layer.w / 2, -layer.h / 2], [-layer.w / 2, layer.h / 2], [layer.w / 2, layer.h / 2]];
-    corners.forEach(([x, y]) => {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
-      ctx.lineWidth = 1.6 * ds; ctx.strokeStyle = '#FF3D8A';
-      ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
-    });
-    const rhY = -layer.h / 2 - 30 * ds;
-    ctx.beginPath(); ctx.moveTo(0, -layer.h / 2); ctx.lineTo(0, rhY);
-    ctx.strokeStyle = '#FF3D8A'; ctx.lineWidth = 1.6 * ds; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, rhY, hs * 0.62, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff'; ctx.fill();
-    ctx.lineWidth = 1.6 * ds; ctx.strokeStyle = '#FF3D8A'; ctx.stroke();
-  }
-  ctx.restore();
 }
 
 let backdropCanvas = null;

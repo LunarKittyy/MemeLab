@@ -7,6 +7,7 @@ export const state = {
   layers: [],
   selectedId: null,       // string | null — primary selection (drives props panel)
   selectedIds: new Set(), // Set<string> — full multi-select set (transient UI state, never persisted)
+  activeTool: null,       // 'lasso'|'polygon'|'wand'|'brushMask'|'gradientMask'|null
 };
 
 export const imageCache = new Map();

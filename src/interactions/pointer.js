@@ -3,6 +3,17 @@ import { clamp, deg2rad, rad2deg, rotVec } from '../core/utils.js';
 import { stage, dispScaleFactor, scheduleRender, applyViewportToStage } from '../render/renderer.js';
 import { viewport, resetViewport } from '../core/viewport.js';
 import { pushHistory } from '../core/history.js';
+import {
+  lassoPointerDown, lassoPointerMove, lassoPointerUp, lassoCancel,
+  polygonPointerDown, polygonCancel,
+  wandPointerDown,
+  gradientPointerDown, gradientPointerMove, gradientPointerUp, gradientCancel,
+  updateCursor, clearCursor,
+} from './selectionTools.js';
+import {
+  brushPointerDown, brushPointerMove, brushPointerUp,
+  brushDeactivate, brushUpdateCursor, brushClearCursor,
+} from './brushMask.js';
 
 const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
 
@@ -73,7 +84,7 @@ export function onDragTick(fn) {
   dragTickListeners.push(fn);
 }
 
-function projectCoords(evt) {
+export function projectCoords(evt) {
   const rect = stage.getBoundingClientRect();
   const sx = state.width / rect.width, sy = state.height / rect.height;
   return { x: (evt.clientX - rect.left) * sx, y: (evt.clientY - rect.top) * sy };
@@ -121,6 +132,36 @@ function handleAt(layer, px, py, ds) {
 let _canvasPinchDist = 0;
 let _canvasPinchCenter = { x: 0, y: 0 };
 
+/** Activate or deactivate a selection tool. Pass null to deactivate. */
+export function setActiveTool(toolName) {
+  const prev = state.activeTool;
+  // Deactivate old tool cleanup
+  if (prev === 'lasso') lassoCancel();
+  else if (prev === 'polygon') polygonCancel();
+  else if (prev === 'gradientMask') gradientCancel();
+  else if (prev === 'brushMask') brushDeactivate();
+
+  // Toggle off if same tool
+  if (prev === toolName) {
+    state.activeTool = null;
+  } else {
+    state.activeTool = toolName;
+  }
+
+  // Update cursor CSS on stage
+  if (stage) {
+    const cursors = {
+      lasso: 'crosshair',
+      polygon: 'crosshair',
+      wand: 'cell',
+      brushMask: 'none',
+      gradientMask: 'crosshair',
+    };
+    stage.style.cursor = state.activeTool ? (cursors[state.activeTool] || 'crosshair') : '';
+  }
+  scheduleRender();
+}
+
 export function stageEventsInit() {
   stage.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointermove', onPointerMove);
@@ -148,12 +189,41 @@ export function stageEventsInit() {
       applyViewportToStage();
     });
   }
+
+  // Escape cancels active tool
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.activeTool) {
+      if (state.activeTool === 'lasso') lassoCancel();
+      else if (state.activeTool === 'polygon') polygonCancel();
+      else if (state.activeTool === 'gradientMask') gradientCancel();
+      else if (state.activeTool === 'brushMask') brushClearCursor();
+      scheduleRender();
+    }
+  });
 }
 
 function onPointerDown(evt) {
   evt.preventDefault();
   const p = projectCoords(evt);
   const ds = dispScaleFactor();
+
+  // ---- Tool mode: route to active selection tool ----
+  if (state.activeTool) {
+    stage.setPointerCapture(evt.pointerId);
+    const tool = state.activeTool;
+    if (tool === 'lasso') {
+      lassoPointerDown(p);
+    } else if (tool === 'polygon') {
+      polygonPointerDown(p);
+    } else if (tool === 'wand') {
+      wandPointerDown(p);
+    } else if (tool === 'brushMask') {
+      brushPointerDown(p);
+    } else if (tool === 'gradientMask') {
+      gradientPointerDown(p);
+    }
+    return;
+  }
 
   if (evt.pointerType === 'touch') {
     activeTouches.set(evt.pointerId, p);
@@ -218,6 +288,27 @@ function onPointerDown(evt) {
 }
 
 function onPointerMove(evt) {
+  // ---- Tool mode ----
+  if (state.activeTool) {
+    const p = projectCoords(evt);
+    const tool = state.activeTool;
+    if (tool === 'lasso') {
+      if (evt.buttons & 1) lassoPointerMove(p);
+      updateCursor(p);
+    } else if (tool === 'polygon') {
+      updateCursor(p);
+      scheduleRender();
+    } else if (tool === 'brushMask') {
+      brushPointerMove(p);
+    } else if (tool === 'gradientMask') {
+      gradientPointerMove(p);
+      updateCursor(p);
+    } else {
+      updateCursor(p);
+    }
+    return;
+  }
+
   if (evt.pointerType === 'touch' && activeTouches.has(evt.pointerId)) {
     activeTouches.set(evt.pointerId, projectCoords(evt));
     screenTouches.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
@@ -299,6 +390,22 @@ function onPointerMove(evt) {
 }
 
 function onPointerUp(evt) {
+  // ---- Tool mode ----
+  if (state.activeTool) {
+    const p = projectCoords(evt);
+    const tool = state.activeTool;
+    if (tool === 'lasso') {
+      lassoPointerUp();
+    } else if (tool === 'brushMask') {
+      brushPointerUp();
+    } else if (tool === 'gradientMask') {
+      gradientPointerUp(p);
+    }
+    // polygon: closes on tap, handled in pointerdown
+    // wand: fires on tap (pointerdown), nothing on up
+    return;
+  }
+
   if (evt.pointerType === 'touch') {
     activeTouches.delete(evt.pointerId);
     screenTouches.delete(evt.pointerId);
