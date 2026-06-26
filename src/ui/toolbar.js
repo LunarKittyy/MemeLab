@@ -125,7 +125,7 @@ async function exportPngAndDownload() {
   try { blob = await renderExportPng(scale); } catch (err) { alert(err.message); return; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'meme.png';
+  a.href = url; a.download = `meme-${state.width}x${state.height}.png`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
@@ -172,7 +172,7 @@ export function initIcons() {
   setIcon('iconAddImage', 'image');
   setIcon('iconAddRect', 'shape');
   setIcon('btnOpenLeft', 'layers');
-  setIcon('btnOpenRight', 'brush');
+  setIcon('btnOpenRight', 'shape');
 }
 
 export function updateHistoryButtons(canUndo, canRedo) {
@@ -317,7 +317,10 @@ export function wireGlobalUI() {
     // Show states from current onward (so user can see where they're jumping to).
     showHistoryMenu(e.currentTarget, (entry) => entry.index >= currentIdx);
   });
-  document.getElementById('btnExport').addEventListener('click', () => { exportPngAndDownload(); showHint('PNG saved to your downloads'); });
+  document.getElementById('btnExport').addEventListener('click', async () => {
+    await exportPngAndDownload();
+    showHint('PNG saved to your downloads');
+  });
   document.getElementById('helpClose').addEventListener('click', toggleHelpModal);
 
   document.getElementById('btnOpenLeft').addEventListener('click', () => openPanelMobile('left'));

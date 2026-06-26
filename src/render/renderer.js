@@ -210,7 +210,6 @@ function thumbSerial(id) {
     crop: JSON.stringify(layer.crop),
     adjustments: JSON.stringify(layer.adjustments),
     mask: layer.mask ? JSON.stringify({ enabled: layer.mask.enabled, invert: layer.mask.invert, feather: layer.mask.feather, src: layer.mask.src ? layer.mask.src.slice(-32) : null, maskLoaded: imgLoaded(layer.mask.src) }) : null,
-    blendMode: layer.blendMode,
   });
 }
 

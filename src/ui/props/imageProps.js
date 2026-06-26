@@ -15,11 +15,12 @@ function _adjVal(layer, type) {
 }
 
 function _adjustmentsHtml(layer) {
-  const inner = `
+  return `<div class="section">
+    <div class="section-title">Adjustments</div>
     ${rangeRow('Brightness', 'aiBright', -100, 100, 1, _adjVal(layer, 'brightness'))}
     ${rangeRow('Contrast',   'aiContr',  -100, 100, 1, _adjVal(layer, 'contrast'))}
-    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}`;
-  return `<div class="section">${collapsibleHtml('adjSection', 'Adjustments', inner)}</div>`;
+    ${rangeRow('Saturation', 'aiSat',    -100, 100, 1, _adjVal(layer, 'saturation'))}
+  </div>`;
 }
 
 export function imagePropsHtml(layer) {
@@ -86,7 +87,7 @@ export function wireImageProps(layer) {
       byId(id + 'val').textContent = v;
       let adj = layer.adjustments.find(a => a.type === type);
       if (adj) { adj.value = v; } else { layer.adjustments.push({ type, value: v }); }
-      clearAdjustCache();
+      clearAdjustCache(layer.id);
       scheduleRender();
     });
     byId(id).addEventListener('change', () => pushHistory());
@@ -94,7 +95,6 @@ export function wireImageProps(layer) {
   wireAdj('aiBright', 'brightness');
   wireAdj('aiContr',  'contrast');
   wireAdj('aiSat',    'saturation');
-  wireCollapsible('adjSection');
 
   // ---- Mask controls ----
   if (!layer.mask) layer.mask = { enabled: false, src: null, invert: false, feather: 0 };

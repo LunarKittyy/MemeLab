@@ -66,6 +66,7 @@ function applyLoadedSnapshot(snap) {
     }
     if (l.blendMode === undefined) l.blendMode = 'normal';
     if (l.type === 'image' && l.mask === undefined) l.mask = { enabled: false, src: null, invert: false, feather: 0 };
+    if (l.type === 'image' && l.crop === undefined) l.crop = { x: 0, y: 0, w: 1, h: 1 };
     if (l.adjustments === undefined) l.adjustments = [];
     // Migrate legacy exposure field → brightness adjustment
     if (l.type === 'image' && l.exposure !== undefined && l.exposure !== 0) {

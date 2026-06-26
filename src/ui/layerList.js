@@ -97,9 +97,6 @@ export function renderLayerList() {
       <div class="lbtns">
         <button class="micro vis" data-id="${l.id}">${l.visible ? ICONS.eye : ICONS.eyeOff}</button>
         <button class="micro lock" data-id="${l.id}">${l.locked ? ICONS.lock : ICONS.unlock}</button>
-        <button class="micro dup" data-id="${l.id}">${ICONS.copy}</button>
-        <button class="micro merge" data-id="${l.id}" ${i === 0 ? 'disabled title="Nothing below to merge into"' : 'title="Merge down"'}>${ICONS.mergeDown}</button>
-        <button class="micro danger del" data-id="${l.id}">${ICONS.trash}</button>
       </div>
       <div class="layer-drag-handle" title="Drag to reorder">
         <svg viewBox="0 0 8 14" fill="currentColor" width="10" height="14">
@@ -204,9 +201,6 @@ export function renderLayerList() {
 
   ul.querySelectorAll('.vis').forEach((b) => b.addEventListener('click', () => { const l = getLayerById(b.dataset.id); l.visible = !l.visible; pushHistory('Toggle visibility'); renderLayerList(); scheduleRender(); }));
   ul.querySelectorAll('.lock').forEach((b) => b.addEventListener('click', () => { const l = getLayerById(b.dataset.id); l.locked = !l.locked; pushHistory('Toggle lock'); renderLayerList(); scheduleRender(); }));
-  ul.querySelectorAll('.del').forEach((b) => b.addEventListener('click', () => deleteLayer(b.dataset.id)));
-  ul.querySelectorAll('.dup').forEach((b) => b.addEventListener('click', () => duplicateLayer(b.dataset.id)));
-  ul.querySelectorAll('.merge').forEach((b) => b.addEventListener('click', () => { if (!b.disabled) mergeLayerDown(b.dataset.id); }));
   ul.querySelectorAll('input.lname').forEach((inp) => {
     inp.addEventListener('change', () => { const l = getLayerById(inp.dataset.id); l.name = inp.value || l.name; pushHistory('Rename layer'); });
   });
@@ -258,7 +252,10 @@ export function mergeLayerDown(id) {
     x: 0, y: 0, w: W, h: H,
     rotation: 0, opacity: 1, visible: true, locked: false, aspectLocked: false,
     src, naturalW: W, naturalH: H,
-    flipX: false, flipY: false, exposure: 0,
+    flipX: false, flipY: false,
+    crop: { x: 0, y: 0, w: 1, h: 1 },
+    mask: { enabled: false, src: null, invert: false, feather: 0 },
+    adjustments: [], blendMode: 'normal',
   };
 
   state.layers.splice(idx - 1, 2, mergedLayer);

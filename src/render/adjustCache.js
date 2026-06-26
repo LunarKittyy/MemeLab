@@ -12,9 +12,14 @@ import { applyAdjustments } from './glAdjust.js';
 const _cache = new Map(); // id -> { serial, canvas }
 const _maskCache = new Map(); // id -> { serial, canvas }
 
-export function clearAdjustCache() {
-  _cache.clear();
-  _maskCache.clear();
+export function clearAdjustCache(layerId) {
+  if (layerId !== undefined) {
+    _cache.delete(layerId);
+    _maskCache.delete(layerId);
+  } else {
+    _cache.clear();
+    _maskCache.clear();
+  }
 }
 
 function makeSerial(layer) {

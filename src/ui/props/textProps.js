@@ -48,17 +48,21 @@ export function textPropsHtml(layer) {
       <div class="togglerow"><div class="section-title" style="margin:0;">Outline</div>
         <label class="switch"><input type="checkbox" id="tStrokeOn" ${layer.stroke.enabled ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
-      <div class="row" style="margin-top:10px;">
-        <label>Color</label>${colorSwatchHtml('tStrokeColor', layer.stroke.color)}
+      <div id="tStrokeControls" style="display:${layer.stroke.enabled ? 'block' : 'none'}">
+        <div class="row" style="margin-top:10px;">
+          <label>Color</label>${colorSwatchHtml('tStrokeColor', layer.stroke.color)}
+        </div>
+        ${rangeRow('Width', 'tStrokeWidth', 0, 40, 1, layer.stroke.width)}
       </div>
-      ${rangeRow('Width', 'tStrokeWidth', 0, 40, 1, layer.stroke.width)}
     </div>
     <div class="section">
       <div class="togglerow"><div class="section-title" style="margin:0;">Background box</div>
         <label class="switch"><input type="checkbox" id="tBoxOn" ${layer.box.enabled ? 'checked' : ''}><span class="track"></span><span class="knob"></span></label>
       </div>
-      <div class="row" style="margin-top:10px;">
-        <label>Color</label>${colorSwatchHtml('tBoxColor', layer.box.color)}
+      <div id="tBoxControls" style="display:${layer.box.enabled ? 'block' : 'none'}">
+        <div class="row" style="margin-top:10px;">
+          <label>Color</label>${colorSwatchHtml('tBoxColor', layer.box.color)}
+        </div>
       </div>
     </div>
     ${transformHtml(layer)}
@@ -116,11 +120,19 @@ export function wireTextProps(layer) {
   byId('tSpacing').addEventListener('change', pushHistory);
   byId('tPadding').addEventListener('input', (e) => { layer.padding = +e.target.value; byId('tPaddingval').textContent = e.target.value; scheduleRender(); });
   byId('tPadding').addEventListener('change', pushHistory);
-  byId('tStrokeOn').addEventListener('change', (e) => { layer.stroke.enabled = e.target.checked; scheduleRender(); pushHistory(); });
+  byId('tStrokeOn').addEventListener('change', (e) => {
+    layer.stroke.enabled = e.target.checked;
+    byId('tStrokeControls').style.display = e.target.checked ? 'block' : 'none';
+    scheduleRender(); pushHistory();
+  });
   wireColorSwatch('tStrokeColor', (hex) => { layer.stroke.color = hex; scheduleRender(); pushHistory(); });
   byId('tStrokeWidth').addEventListener('input', (e) => { layer.stroke.width = +e.target.value; byId('tStrokeWidthval').textContent = e.target.value; scheduleRender(); });
   byId('tStrokeWidth').addEventListener('change', pushHistory);
-  byId('tBoxOn').addEventListener('change', (e) => { layer.box.enabled = e.target.checked; scheduleRender(); pushHistory(); });
+  byId('tBoxOn').addEventListener('change', (e) => {
+    layer.box.enabled = e.target.checked;
+    byId('tBoxControls').style.display = e.target.checked ? 'block' : 'none';
+    scheduleRender(); pushHistory();
+  });
   wireColorSwatch('tBoxColor', (hex) => { layer.box.color = hex; scheduleRender(); pushHistory(); });
   byId('tAspect').addEventListener('change', (e) => { layer.aspectLocked = e.target.checked; pushHistory(); });
   wireActions(layer);
