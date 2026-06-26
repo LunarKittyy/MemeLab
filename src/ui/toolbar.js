@@ -15,6 +15,7 @@ import { quickExport, openExportModal } from './exportModal.js';
 import { openDocumentPanel, syncSizeInputs as docSyncSizeInputs, applyCanvasResize } from './documentPanel.js';
 import { openCanvasCropModal } from './canvasCropModal.js';
 import { openStraightenModal } from './straightenModal.js';
+import { outpaintCanvas } from '../cutout/outpaint.js';
 
 let fileInput = null;
 let pendingImageTarget = null;
@@ -329,6 +330,70 @@ export function wireGlobalUI() {
   if (chEl) chEl.addEventListener('change', (e) => { state.height = clamp(+e.target.value || 1080, 50, 8000); resizeStageBuffer(); pushHistory('Resize canvas'); });
 
   let _resetPending = false, _resetTimer = null;
+  // ---- Outpaint / expand canvas ----
+  (function wireOutpaint() {
+    const btnToggle  = document.getElementById('btnOutpaint');
+    const panel      = document.getElementById('outpaintPanel');
+    const btnRun     = document.getElementById('btnOutpaintRun');
+    if (!btnToggle || !panel || !btnRun) return;
+
+    btnToggle.addEventListener('click', () => {
+      const open = panel.style.display !== 'none';
+      panel.style.display = open ? 'none' : 'block';
+    });
+
+    btnRun.addEventListener('click', async () => {
+      if (btnRun.disabled) return;
+      const top    = Math.max(0, parseInt(document.getElementById('outpaintTop').value,    10) || 0);
+      const bottom = Math.max(0, parseInt(document.getElementById('outpaintBottom').value, 10) || 0);
+      const left   = Math.max(0, parseInt(document.getElementById('outpaintLeft').value,   10) || 0);
+      const right  = Math.max(0, parseInt(document.getElementById('outpaintRight').value,  10) || 0);
+
+      if (!top && !bottom && !left && !right) {
+        const err = document.getElementById('outpaintError');
+        if (err) { err.textContent = 'Enter at least one non-zero expansion value.'; err.style.display = 'block'; setTimeout(() => { err.style.display = 'none'; }, 4000); }
+        return;
+      }
+
+      btnRun.disabled = true;
+      btnToggle.disabled = true;
+      const prog = document.getElementById('outpaintProgress');
+      const label = document.getElementById('outpaintProgressLabel');
+      const bar   = document.getElementById('outpaintProgressBar');
+      const errEl = document.getElementById('outpaintError');
+      if (errEl) errEl.style.display = 'none';
+      if (prog) prog.style.display = 'block';
+
+      function setOutpaintProgress(lbl, pct) {
+        if (label) label.textContent = lbl;
+        if (bar)   bar.style.width = Math.round(pct * 100) + '%';
+      }
+
+      try {
+        await outpaintCanvas(top, right, bottom, left, (phase, pct) => {
+          if (phase === 'download') {
+            setOutpaintProgress(`Downloading model… ${Math.round(pct * 100)}%`, pct * 0.7);
+          } else if (phase === 'init') {
+            setOutpaintProgress('Initialising model…', 0.7 + pct * 0.15);
+          } else if (phase === 'inference') {
+            setOutpaintProgress(pct < 1 ? 'Running AI expand…' : 'Finalising…', 0.85 + pct * 0.15);
+          } else if (phase === 'ready') {
+            setOutpaintProgress('Ready', 1);
+          }
+        });
+        renderLayerList();
+        syncSizeInputs();
+      } catch (err) {
+        console.error('Outpaint failed:', err);
+        if (errEl) { errEl.textContent = 'Failed: ' + (err.message || 'Unknown error'); errEl.style.display = 'block'; setTimeout(() => { errEl.style.display = 'none'; }, 5000); }
+      } finally {
+        if (prog) prog.style.display = 'none';
+        btnRun.disabled = false;
+        btnToggle.disabled = false;
+      }
+    });
+  })();
+
   document.getElementById('btnReset').addEventListener('click', () => {
     if (!_resetPending) {
       _resetPending = true;
