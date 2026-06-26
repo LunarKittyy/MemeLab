@@ -6,6 +6,7 @@ export const state = {
   background: { type: 'color', color: '#ffffff', src: null, fit: 'cover' },
   layers: [],
   selectedId: null,
+  straighten: 0,
 };
 
 export const imageCache = new Map();

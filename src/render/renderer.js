@@ -3,6 +3,7 @@ import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
 import { viewport, resetViewport } from '../core/viewport.js';
+import { perspectiveWarpCanvas } from './glAdjust.js';
 
 export let stage = null;
 let stageCtx = null;
@@ -37,6 +38,47 @@ export function dispScaleFactor() {
 
 function drawLayer(ctx, layer, backdrop) {
   if (!layer.visible) return;
+
+  // Perspective warp: render to an off-screen canvas then warp onto main ctx.
+  if (layer.type === 'image' && layer.perspectiveWarp?.enabled) {
+    const pw = layer.perspectiveWarp;
+    // Render the un-warped layer to an off-screen canvas at layer size.
+    const offW = Math.ceil(layer.w), offH = Math.ceil(layer.h);
+    if (offW < 1 || offH < 1) return;
+    const off = document.createElement('canvas');
+    off.width = offW; off.height = offH;
+    const offCtx = off.getContext('2d');
+    offCtx.globalAlpha = 1;
+    // Temporarily clear perspective warp so drawImageLayer renders normally.
+    const savedPw = layer.perspectiveWarp;
+    layer.perspectiveWarp = null;
+    drawImageLayer(offCtx, layer);
+    layer.perspectiveWarp = savedPw;
+
+    // Compute the four destination corners in canvas space.
+    const { x, y, w, h } = layer;
+    // Apply layer rotation around its center.
+    const cx = x + w / 2, cy = y + h / 2;
+    const rad = deg2rad(layer.rotation);
+    function rotCorner(lx, ly) {
+      const dx = lx - cx, dy = ly - cy;
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+    }
+    // Base corners + per-corner offsets from perspectiveWarp.
+    const tl = rotCorner(x + pw.tl.dx, y + pw.tl.dy);
+    const tr = rotCorner(x + w + pw.tr.dx, y + pw.tr.dy);
+    const bl = rotCorner(x + pw.bl.dx, y + h + pw.bl.dy);
+    const br = rotCorner(x + w + pw.br.dx, y + h + pw.br.dy);
+
+    ctx.save();
+    ctx.globalCompositeOperation = layer.blendMode || 'normal';
+    ctx.globalAlpha = clamp(layer.opacity, 0, 1);
+    perspectiveWarpCanvas(off, ctx, { tl, tr, bl, br }, Math.ceil(state.width), Math.ceil(state.height));
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.globalCompositeOperation = layer.blendMode || 'normal';
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
@@ -54,6 +96,51 @@ function drawSelectionOverlay(ctx) {
   const layer = getSelected();
   if (!layer) return;
   const ds = dispScaleFactor();
+
+  // Perspective warp mode: draw warp corner handles instead of normal selection.
+  if (layer.type === 'image' && layer.perspectiveWarp?.enabled) {
+    const pw = layer.perspectiveWarp;
+    const { x, y, w, h } = layer;
+    const cx = x + w / 2, cy = y + h / 2;
+    const rad = deg2rad(layer.rotation);
+    function rotCorner(lx, ly) {
+      const dx = lx - cx, dy = ly - cy;
+      const c = Math.cos(rad), s = Math.sin(rad);
+      return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+    }
+    const corners = [
+      rotCorner(x + pw.tl.dx, y + pw.tl.dy),
+      rotCorner(x + w + pw.tr.dx, y + pw.tr.dy),
+      rotCorner(x + pw.bl.dx, y + h + pw.bl.dy),
+      rotCorner(x + w + pw.br.dx, y + h + pw.br.dy),
+    ];
+    ctx.save();
+    // Draw quad outline
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    ctx.lineTo(corners[1].x, corners[1].y);
+    ctx.lineTo(corners[3].x, corners[3].y);
+    ctx.lineTo(corners[2].x, corners[2].y);
+    ctx.closePath();
+    ctx.strokeStyle = '#FF9500';
+    ctx.lineWidth = 1.6 * ds;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    // Draw handles at each corner
+    const hs = 10 * ds;
+    corners.forEach(({ x, y }) => {
+      ctx.beginPath();
+      ctx.arc(x, y, hs / 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#FF9500';
+      ctx.lineWidth = 1.6 * ds;
+      ctx.stroke();
+    });
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
   ctx.translate(cx, cy);
@@ -104,9 +191,22 @@ function buildBackdrop(W, H) {
   } else {
     backdropCtx.fillStyle = state.background.color; backdropCtx.fillRect(0, 0, W, H);
   }
-  for (const layer of state.layers) {
-    if (layer.type === 'rect' && (layer.mode === 'blur' || layer.mode === 'pixelate')) continue;
-    drawLayer(backdropCtx, layer, null);
+  const straighten = state.straighten || 0;
+  if (straighten !== 0) {
+    backdropCtx.save();
+    backdropCtx.translate(W / 2, H / 2);
+    backdropCtx.rotate(deg2rad(straighten));
+    backdropCtx.translate(-W / 2, -H / 2);
+    for (const layer of state.layers) {
+      if (layer.type === 'rect' && (layer.mode === 'blur' || layer.mode === 'pixelate')) continue;
+      drawLayer(backdropCtx, layer, null);
+    }
+    backdropCtx.restore();
+  } else {
+    for (const layer of state.layers) {
+      if (layer.type === 'rect' && (layer.mode === 'blur' || layer.mode === 'pixelate')) continue;
+      drawLayer(backdropCtx, layer, null);
+    }
   }
   return backdropCanvas;
 }
@@ -129,7 +229,17 @@ export function renderScene(ctx, opts) {
     l => l.visible && l.type === 'rect' && (l.mode === 'blur' || l.mode === 'pixelate')
   );
   const backdrop = hasBoxEffect ? buildBackdrop(W, H) : null;
-  for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
+  const straighten = state.straighten || 0;
+  if (straighten !== 0) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(deg2rad(straighten));
+    ctx.translate(-W / 2, -H / 2);
+    for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
+    ctx.restore();
+  } else {
+    for (const layer of state.layers) drawLayer(ctx, layer, backdrop);
+  }
   if (!opts.forExport) drawSelectionOverlay(ctx);
 }
 

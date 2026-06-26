@@ -65,6 +65,97 @@ function initGL() {
   return true;
 }
 
+// Perspective warp: draw srcCanvas onto destCtx warped to the given four corners.
+// corners: { tl, tr, bl, br } each { x, y } in destCtx coordinate space.
+// Uses triangle subdivision (fake perspective) — works without additional WebGL setup.
+export function perspectiveWarpCanvas(srcCanvas, destCtx, corners, destW, destH) {
+  const STEPS = 16; // subdivision grid per side
+  const { tl, tr, bl, br } = corners;
+  const sw = srcCanvas.width, sh = srcCanvas.height;
+
+  destCtx.save();
+  // Clip to the bounding box of the destination to avoid overdraw.
+  destCtx.beginPath();
+  destCtx.moveTo(tl.x, tl.y);
+  destCtx.lineTo(tr.x, tr.y);
+  destCtx.lineTo(br.x, br.y);
+  destCtx.lineTo(bl.x, bl.y);
+  destCtx.closePath();
+  destCtx.clip();
+
+  // Bilinear interpolation of corner positions.
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function bilerp(u, v) {
+    const x = lerp(lerp(tl.x, tr.x, u), lerp(bl.x, br.x, u), v);
+    const y = lerp(lerp(tl.y, tr.y, u), lerp(bl.y, br.y, u), v);
+    return { x, y };
+  }
+
+  for (let row = 0; row < STEPS; row++) {
+    for (let col = 0; col < STEPS; col++) {
+      const u0 = col / STEPS, u1 = (col + 1) / STEPS;
+      const v0 = row / STEPS, v1 = (row + 1) / STEPS;
+
+      // Four corners of this cell in dest space
+      const p00 = bilerp(u0, v0);
+      const p10 = bilerp(u1, v0);
+      const p01 = bilerp(u0, v1);
+      const p11 = bilerp(u1, v1);
+
+      // Source pixel rect for this cell
+      const sx0 = u0 * sw, sx1 = u1 * sw;
+      const sy0 = v0 * sh, sy1 = v1 * sh;
+      const scx = (sx0 + sx1) / 2, scy = (sy0 + sy1) / 2;
+
+      // Draw two triangles per cell using transform trick.
+      // Triangle 1: p00, p10, p01
+      drawTriangle(destCtx, srcCanvas,
+        p00.x, p00.y, p10.x, p10.y, p01.x, p01.y,
+        sx0, sy0, sx1, sy0, sx0, sy1,
+        sw, sh);
+      // Triangle 2: p11, p01, p10
+      drawTriangle(destCtx, srcCanvas,
+        p11.x, p11.y, p01.x, p01.y, p10.x, p10.y,
+        sx1, sy1, sx0, sy1, sx1, sy0,
+        sw, sh);
+    }
+  }
+  destCtx.restore();
+}
+
+// Draw a textured triangle onto destCtx.
+// d0,d1,d2: destination vertices; s0,s1,s2: corresponding source UV in pixels.
+function drawTriangle(ctx, src, dx0, dy0, dx1, dy1, dx2, dy2, sx0, sy0, sx1, sy1, sx2, sy2, sw, sh) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(dx0, dy0);
+  ctx.lineTo(dx1, dy1);
+  ctx.lineTo(dx2, dy2);
+  ctx.closePath();
+  ctx.clip();
+
+  // Compute the affine transform that maps (sx0,sy0),(sx1,sy1),(sx2,sy2) → (dx0,dy0),(dx1,dy1),(dx2,dy2)
+  const dxA = dx1 - dx0, dyA = dy1 - dy0;
+  const dxB = dx2 - dx0, dyB = dy2 - dy0;
+  const sxA = sx1 - sx0, syA = sy1 - sy0;
+  const sxB = sx2 - sx0, syB = sy2 - sy0;
+
+  const det = sxA * syB - syA * sxB;
+  if (Math.abs(det) < 1e-6) { ctx.restore(); return; }
+  const idet = 1 / det;
+
+  const a = (dxA * syB - dxB * syA) * idet;
+  const b = (dxB * sxA - dxA * sxB) * idet;
+  const c = (dyA * syB - dyB * syA) * idet;
+  const d = (dyB * sxA - dyA * sxB) * idet;
+  const e = dx0 - a * sx0 - b * sy0;
+  const f = dy0 - c * sx0 - d * sy0;
+
+  ctx.transform(a, c, b, d, e, f);
+  ctx.drawImage(src, 0, 0);
+  ctx.restore();
+}
+
 export function applyAdjustments(srcCanvas, adjustments) {
   let brightness = 0, contrast = 0, saturation = 0;
   for (const adj of (adjustments || [])) {

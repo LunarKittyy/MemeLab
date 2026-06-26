@@ -11,6 +11,8 @@ import { wireCustomSelect } from './customSelect.js';
 import { renderLayerList, deleteLayer, duplicateLayer, moveLayerUp, moveLayerDown, moveLayerToTop, moveLayerToBottom, setLastCreatedLayerId } from './layerList.js';
 import { renderPropsPanel } from './props/panel.js';
 import { byId, syncTransformInputs } from './props/shared.js';
+import { openCanvasCropModal } from './canvasCropModal.js';
+import { openStraightenModal } from './straightenModal.js';
 
 let fileInput = null;
 let pendingImageTarget = null;
@@ -199,6 +201,12 @@ export function wireGlobalUI() {
     pendingImageTarget = null;
   });
 
+
+  const btnCropCanvas = document.getElementById('btnCropCanvas');
+  if (btnCropCanvas) btnCropCanvas.addEventListener('click', openCanvasCropModal);
+
+  const btnStraighten = document.getElementById('btnStraighten');
+  if (btnStraighten) btnStraighten.addEventListener('click', openStraightenModal);
 
   wireCustomSelect('sizePreset', (v) => applySizePreset(v));
   const exportSplit = document.getElementById('exportScale');

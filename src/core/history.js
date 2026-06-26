@@ -11,6 +11,7 @@ export function snapshot() {
     background: JSON.parse(JSON.stringify(state.background)),
     layers: JSON.parse(JSON.stringify(state.layers)),
     selectedId: state.selectedId,
+    straighten: state.straighten || 0,
   };
 }
 
@@ -51,6 +52,7 @@ export function restoreSnapshot(snap) {
   state.background = clone.background;
   state.layers = clone.layers;
   state.selectedId = clone.selectedId;
+  state.straighten = clone.straighten || 0;
   clearAdjustCache();
   if (state.background.src) ensureImage(state.background.src);
   state.layers.forEach((l) => {

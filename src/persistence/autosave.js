@@ -60,6 +60,9 @@ function applyLoadedSnapshot(snap) {
   state.height = snap.height || 1080;
   state.background = snap.background || { type: 'color', color: '#ffffff', src: null, fit: 'cover' };
   state.layers = Array.isArray(snap.layers) ? snap.layers : [];
+  // Migrate straighten field
+  if (snap.straighten === undefined) state.straighten = 0;
+  else state.straighten = snap.straighten;
   state.layers.forEach((l) => {
     if (l.type === 'text' && l.sizeScale === undefined && l.size && l.h) {
       l.sizeScale = Math.min(1, Math.max(0.05, l.size / l.h));
@@ -67,6 +70,8 @@ function applyLoadedSnapshot(snap) {
     if (l.blendMode === undefined) l.blendMode = 'normal';
     if (l.type === 'image' && l.mask === undefined) l.mask = { enabled: false, src: null, invert: false, feather: 0 };
     if (l.adjustments === undefined) l.adjustments = [];
+    // Migrate perspectiveWarp field
+    if (l.type === 'image' && l.perspectiveWarp === undefined) l.perspectiveWarp = null;
     // Migrate legacy exposure field → brightness adjustment
     if (l.type === 'image' && l.exposure !== undefined && l.exposure !== 0) {
       if (!l.adjustments.some(a => a.type === 'brightness')) {
