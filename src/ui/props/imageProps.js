@@ -232,6 +232,16 @@ function _hslSectionHtml(layer) {
     </div>`;
 }
 
+function _adjProp(layer, type, prop, def) {
+  const a = (layer.adjustments || []).find(x => x.type === type);
+  return a ? (a[prop] ?? def) : def;
+}
+
+function _adjProp(layer, type, prop, defaultVal) {
+  const a = (layer.adjustments || []).find(x => x.type === type);
+  return a ? (a[prop] ?? defaultVal) : defaultVal;
+}
+
 function _adjustmentsHtml(layer) {
   return `<div class="section">
     <div class="section-title">Adjustments</div>
@@ -248,13 +258,25 @@ function _adjustmentsHtml(layer) {
           <button class="adj-pick-btn" data-type="curves">Curves</button>
         </div>
       </div>
-      <div>
+      <div style="margin-bottom:4px;">
         <div class="adj-category-label">Color</div>
         <div class="adj-picker-grid">
           <button class="adj-pick-btn" data-type="vibrance">Vibrance</button>
           <button class="adj-pick-btn" data-type="temperature">Temperature</button>
           <button class="adj-pick-btn" data-type="tint">Tint</button>
           <button class="adj-pick-btn" data-type="hsl">HSL</button>
+        </div>
+      </div>
+      <div>
+        <div class="adj-category-label">Effects</div>
+        <div class="adj-picker-grid">
+          <button class="adj-pick-btn" data-type="vignette">Vignette</button>
+          <button class="adj-pick-btn" data-type="clarity">Clarity</button>
+          <button class="adj-pick-btn" data-type="sharpen">Sharpen</button>
+          <button class="adj-pick-btn" data-type="dehaze">Dehaze</button>
+          <button class="adj-pick-btn" data-type="noise_reduction">Noise Reduc.</button>
+          <button class="adj-pick-btn" data-type="grain">Grain</button>
+          <button class="adj-pick-btn" data-type="split_tone">Split-tone</button>
         </div>
       </div>
       <button class="smallbtn full" id="aiAutoEnhance" style="margin-top:8px;">Auto</button>
@@ -271,13 +293,18 @@ function _adjSliderHtml(layer) {
   const types = adjs.map(a => a.type);
   let html = '';
 
-  // Dynamic scalar adjustments (brightness/contrast/saturation are always shown above)
   const scalars = [
-    { type: 'highlights',  label: 'Highlights',   id: 'aiHighl',   min: -100, max: 100 },
-    { type: 'shadows',     label: 'Shadows',      id: 'aiShad',    min: -100, max: 100 },
-    { type: 'vibrance',    label: 'Vibrance',     id: 'aiVibr',    min: -100, max: 100 },
-    { type: 'temperature', label: 'Temperature',  id: 'aiTemp',    min: -100, max: 100 },
-    { type: 'tint',        label: 'Tint',         id: 'aiTint',    min: -100, max: 100 },
+    { type: 'highlights',     label: 'Highlights',    id: 'aiHighl',    min: -100, max: 100 },
+    { type: 'shadows',        label: 'Shadows',       id: 'aiShad',     min: -100, max: 100 },
+    { type: 'vibrance',       label: 'Vibrance',      id: 'aiVibr',     min: -100, max: 100 },
+    { type: 'temperature',    label: 'Temperature',   id: 'aiTemp',     min: -100, max: 100 },
+    { type: 'tint',           label: 'Tint',          id: 'aiTint',     min: -100, max: 100 },
+    { type: 'vignette',       label: 'Vignette',      id: 'aiVignette', min: -100, max: 100 },
+    { type: 'clarity',        label: 'Clarity',       id: 'aiClarity',  min: 0,    max: 100 },
+    { type: 'sharpen',        label: 'Sharpen',       id: 'aiSharpen',  min: 0,    max: 100 },
+    { type: 'dehaze',         label: 'Dehaze',        id: 'aiDehaze',   min: -100, max: 100 },
+    { type: 'noise_reduction',label: 'Noise Reduc.',  id: 'aiNR',       min: 0,    max: 100 },
+    { type: 'grain',          label: 'Grain',         id: 'aiGrain',    min: 0,    max: 100 },
   ];
   for (const s of scalars) {
     if (types.includes(s.type)) {
@@ -289,6 +316,21 @@ function _adjSliderHtml(layer) {
         ${rangeRow('', s.id, s.min, s.max, 1, _adjVal(layer, s.type))}
       </div>`;
     }
+  }
+
+  // Split-tone
+  if (types.includes('split_tone')) {
+    const st = adjs.find(a => a.type === 'split_tone') || {};
+    html += `<div class="adj-slider-group" data-type="split_tone">
+      <div class="adj-slider-header"><span>Split-tone</span>
+        <button class="adj-remove-btn" data-remove="split_tone" title="Remove">✕</button>
+      </div>
+      ${rangeRow('Highlight Hue', 'aiStHHue', 0, 360, 1, st.highlightHue ?? 0)}
+      ${rangeRow('Highlight Sat', 'aiStHSat', 0, 100, 1, st.highlightSat ?? 0)}
+      ${rangeRow('Shadow Hue',    'aiStSHue', 0, 360, 1, st.shadowHue    ?? 0)}
+      ${rangeRow('Shadow Sat',    'aiStSSat', 0, 100, 1, st.shadowSat    ?? 0)}
+      ${rangeRow('Balance',       'aiStBal', -100, 100, 1, st.balance     ?? 0)}
+    </div>`;
   }
 
   // Curves
@@ -627,7 +669,11 @@ export function wireImageProps(layer) {
 
   // ---- Adjustments section ----
   if (!layer.adjustments) layer.adjustments = [];
+
+
   wireCollapsible('adjSection');
+  wireCollapsible('adjTone');
+  wireCollapsible('adjEffects');
 
   // Wire the always-present base sliders (not re-rendered on picker changes)
   wireBaseSliders(layer);

@@ -1,13 +1,9 @@
 // WebGL1 multi-pass adjustment pipeline.
-// Pass 1 (main prog): brightness, contrast, saturation, vibrance,
-//   temperature, tint, highlights, shadows, plus optional curve LUT textures.
-// Pass 2 (HSL prog): per-range hue/saturation/luminance adjustments (only
-//   when HSL adjustments are present).
-//
-// Singleton GL context — one offscreen canvas shared across all calls.
+// Pass 1 (main prog): brightness, contrast, saturation, vibrance, temperature, tint,
+//   highlights, shadows, curve LUTs, vignette, split-tone, grain.
+// Pass 2 (HSL prog, optional): per-range hue/saturation/luminance adjustments.
+// Pass 3 (spatial prog, optional): clarity, sharpen, noise reduction, dehaze.
 // Returns a 2D canvas with the result, or null if no adjustments have effect.
-
-// ─── Vertex shader (shared by both programs) ───────────────────────────────
 const VERT = `
 attribute vec2 a_pos;
 varying vec2 v_uv;
@@ -28,9 +24,7 @@ uniform float u_temperature;
 uniform float u_tint;
 uniform float u_highlights;
 uniform float u_shadows;
-
-// Curve LUT textures (256x1 RGBA, all channels carry the same mapped value)
-uniform sampler2D u_lutRGB; // applied to all channels
+uniform sampler2D u_lutRGB;
 uniform sampler2D u_lutR;
 uniform sampler2D u_lutG;
 uniform sampler2D u_lutB;
@@ -38,7 +32,12 @@ uniform int u_hasLutRGB;
 uniform int u_hasLutR;
 uniform int u_hasLutG;
 uniform int u_hasLutB;
-
+uniform float u_vignette;
+uniform vec3  u_highlight_color;
+uniform vec3  u_shadow_color;
+uniform float u_split_balance;
+uniform float u_split_active;
+uniform float u_grain;
 varying vec2 v_uv;
 
 void main() {
@@ -87,23 +86,34 @@ void main() {
     c.g = texture2D(u_lutRGB, vec2(c.g, 0.5)).r;
     c.b = texture2D(u_lutRGB, vec2(c.b, 0.5)).r;
   }
-  if (u_hasLutR == 1) {
-    c.r = texture2D(u_lutR, vec2(c.r, 0.5)).r;
+  if (u_hasLutR == 1) c.r = texture2D(u_lutR, vec2(c.r, 0.5)).r;
+  if (u_hasLutG == 1) c.g = texture2D(u_lutG, vec2(c.g, 0.5)).r;
+  if (u_hasLutB == 1) c.b = texture2D(u_lutB, vec2(c.b, 0.5)).r;
+
+  // Vignette
+  float vigDist = length(v_uv - vec2(0.5));
+  float vigMask = smoothstep(0.3, 0.75, vigDist);
+  c.rgb *= 1.0 - u_vignette * vigMask * 0.8;
+
+  // Split-tone
+  if (u_split_active > 0.5) {
+    float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float hiWeight = smoothstep(0.4 + u_split_balance * 0.2, 0.9, luma);
+    float loWeight = smoothstep(0.5 - u_split_balance * 0.2, 0.0, luma);
+    c.rgb = mix(c.rgb, mix(c.rgb, u_highlight_color, hiWeight * 0.4), 1.0);
+    c.rgb = mix(c.rgb, mix(c.rgb, u_shadow_color,    loWeight * 0.4), 1.0);
   }
-  if (u_hasLutG == 1) {
-    c.g = texture2D(u_lutG, vec2(c.g, 0.5)).r;
-  }
-  if (u_hasLutB == 1) {
-    c.b = texture2D(u_lutB, vec2(c.b, 0.5)).r;
+
+  // Grain
+  if (u_grain > 0.0) {
+    float noise = fract(sin(dot(v_uv * 100.0 + vec2(0.1, 0.2), vec2(12.9898, 78.233))) * 43758.5453);
+    c.rgb += (noise - 0.5) * u_grain * 0.15;
   }
 
   gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
 }`;
 
 // ─── HSL pass fragment shader ──────────────────────────────────────────────
-// Handles up to 7 color ranges. Each range is encoded as:
-//   u_hslData[i] = vec4(hue_center_norm, hue_half_width_norm, saturation_delta, luminance_delta)
-//   u_hslHue[i]  = hue_delta (separate because vec4 is full)
 const HSL_FRAG = `
 precision mediump float;
 uniform sampler2D u_tex;
@@ -238,6 +248,142 @@ function createProgram(gl, vertSrc, fragSrc) {
   return prog;
 }
 
+// ─── Spatial pass fragment shader ──────────────────────────────────────────
+const SPATIAL_FRAG = `
+precision mediump float;
+uniform sampler2D u_src;
+uniform vec2  u_texelSize;
+uniform float u_clarity;
+uniform float u_sharpen;
+uniform float u_nr_luma;
+uniform float u_nr_color;
+uniform float u_dehaze;
+varying vec2 v_uv;
+
+// 3x3 box blur
+vec4 boxBlur3(sampler2D tex, vec2 uv, vec2 ts) {
+  vec4 s = vec4(0.0);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      s += texture2D(tex, uv + vec2(float(dx), float(dy)) * ts);
+    }
+  }
+  return s / 9.0;
+}
+
+// 5x5 box blur (for stronger NR / dehaze)
+vec4 boxBlur5(sampler2D tex, vec2 uv, vec2 ts) {
+  vec4 s = vec4(0.0);
+  for (int dy = -2; dy <= 2; dy++) {
+    for (int dx = -2; dx <= 2; dx++) {
+      s += texture2D(tex, uv + vec2(float(dx), float(dy)) * ts);
+    }
+  }
+  return s / 25.0;
+}
+
+// RGB -> YCbCr (BT.601)
+vec3 rgbToYCbCr(vec3 rgb) {
+  float y  =  0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+  float cb = -0.169 * rgb.r - 0.331 * rgb.g + 0.500 * rgb.b + 0.5;
+  float cr =  0.500 * rgb.r - 0.419 * rgb.g - 0.081 * rgb.b + 0.5;
+  return vec3(y, cb, cr);
+}
+
+// YCbCr -> RGB
+vec3 yCbCrToRgb(vec3 ycbcr) {
+  float y  = ycbcr.x;
+  float cb = ycbcr.y - 0.5;
+  float cr = ycbcr.z - 0.5;
+  float r = y + 1.402 * cr;
+  float g = y - 0.344 * cb - 0.714 * cr;
+  float b = y + 1.772 * cb;
+  return vec3(r, g, b);
+}
+
+void main() {
+  vec4 orig = texture2D(u_src, v_uv);
+  vec4 c = orig;
+
+  // ---- Noise reduction ----
+  if (u_nr_luma > 0.0 || u_nr_color > 0.0) {
+    vec4 blurred5 = boxBlur5(u_src, v_uv, u_texelSize);
+    if (u_nr_luma > 0.0 && u_nr_color > 0.0) {
+      // Both: blend full in YCbCr space
+      vec3 ycbcr_orig    = rgbToYCbCr(c.rgb);
+      vec3 ycbcr_blurred = rgbToYCbCr(blurred5.rgb);
+      float y  = mix(ycbcr_orig.x, ycbcr_blurred.x, u_nr_luma);
+      float cb = mix(ycbcr_orig.y, ycbcr_blurred.y, u_nr_color);
+      float cr = mix(ycbcr_orig.z, ycbcr_blurred.z, u_nr_color);
+      c.rgb = yCbCrToRgb(vec3(y, cb, cr));
+    } else if (u_nr_luma > 0.0) {
+      vec3 ycbcr_orig    = rgbToYCbCr(c.rgb);
+      vec3 ycbcr_blurred = rgbToYCbCr(blurred5.rgb);
+      float y = mix(ycbcr_orig.x, ycbcr_blurred.x, u_nr_luma);
+      c.rgb = yCbCrToRgb(vec3(y, ycbcr_orig.y, ycbcr_orig.z));
+    } else {
+      vec3 ycbcr_orig    = rgbToYCbCr(c.rgb);
+      vec3 ycbcr_blurred = rgbToYCbCr(blurred5.rgb);
+      float cb = mix(ycbcr_orig.y, ycbcr_blurred.y, u_nr_color);
+      float cr = mix(ycbcr_orig.z, ycbcr_blurred.z, u_nr_color);
+      c.rgb = yCbCrToRgb(vec3(ycbcr_orig.x, cb, cr));
+    }
+  }
+
+  // ---- Dehaze ----
+  // Haze = uniform light overlay; remove by boosting contrast locally,
+  // reducing brightness slightly, and recovering detail with unsharp mask.
+  if (u_dehaze > 0.0) {
+    vec4 blurred3 = boxBlur3(u_src, v_uv, u_texelSize);
+    vec4 detail = orig - blurred3;
+    // Contrast boost
+    c.rgb = (c.rgb - 0.5) * (1.0 + u_dehaze * 0.5) + 0.5;
+    // Slight brightness reduction (haze lifts midtones)
+    c.rgb -= u_dehaze * 0.05;
+    // Local contrast recovery via unsharp mask
+    c.rgb += detail.rgb * u_dehaze * 0.8;
+  } else if (u_dehaze < 0.0) {
+    // Negative dehaze = add haze: blend toward a bright flat overlay
+    float hazeAmt = -u_dehaze;
+    c.rgb = mix(c.rgb, vec3(0.85), hazeAmt * 0.4);
+  }
+
+  // ---- Sharpen (full unsharp mask) ----
+  if (u_sharpen > 0.0) {
+    vec4 blurred3 = boxBlur3(u_src, v_uv, u_texelSize);
+    vec4 detail = orig - blurred3;
+    c.rgb += detail.rgb * u_sharpen * 2.0;
+  }
+
+  // ---- Clarity (mid-tone contrast via unsharp mask) ----
+  if (u_clarity > 0.0) {
+    vec4 blurred3 = boxBlur3(u_src, v_uv, u_texelSize);
+    vec4 detail = orig - blurred3;
+    float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float midMask = smoothstep(0.15, 0.35, luma) * (1.0 - smoothstep(0.65, 0.85, luma));
+    c.rgb += detail.rgb * u_clarity * 1.5 * midMask;
+  }
+
+  gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
+}`;
+
+// Track B additional state vars
+let _uVignette;
+let _uHighlightColor, _uShadowColor, _uSplitBalance, _uSplitActive;
+let _uGrain;
+let _spatialProg     = null;
+let _uSpatialTexSrc  = null;
+let _uTexelSize      = null;
+let _uClarity        = null;
+let _uSharpen        = null;
+let _uNrLuma         = null;
+let _uNrColor        = null;
+let _uDehaze         = null;
+let _fbo2 = null, _fboTex2 = null;
+
+// ---------------------------------------------------------------------------
+// Initialisation
+// ---------------------------------------------------------------------------
 function initGL() {
   if (_gl) return true;
   _glCanvas = document.createElement('canvas');
@@ -255,15 +401,15 @@ function initGL() {
   gl.bindBuffer(gl.ARRAY_BUFFER, _quadBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
 
-  function bindQuad(prog) {
+  function bindQuadInner(prog) {
     gl.bindBuffer(gl.ARRAY_BUFFER, _quadBuf);
     const loc = gl.getAttribLocation(prog, 'a_pos');
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
   }
-  bindQuad(_prog);
+  bindQuadInner(_prog);
 
-  // Main uniforms
+  // Track A uniforms
   _uBright     = gl.getUniformLocation(_prog, 'u_brightness');
   _uContrast   = gl.getUniformLocation(_prog, 'u_contrast');
   _uSat        = gl.getUniformLocation(_prog, 'u_saturation');
@@ -276,8 +422,6 @@ function initGL() {
   _uHasLutR    = gl.getUniformLocation(_prog, 'u_hasLutR');
   _uHasLutG    = gl.getUniformLocation(_prog, 'u_hasLutG');
   _uHasLutB    = gl.getUniformLocation(_prog, 'u_hasLutB');
-
-  // Texture samplers for main pass
   gl.uniform1i(gl.getUniformLocation(_prog, 'u_tex'), 0);
   _uLutRGB = gl.getUniformLocation(_prog, 'u_lutRGB');
   _uLutR   = gl.getUniformLocation(_prog, 'u_lutR');
@@ -288,10 +432,18 @@ function initGL() {
   gl.uniform1i(_uLutG,   3);
   gl.uniform1i(_uLutB,   4);
 
+  // Track B uniforms
+  _uVignette       = gl.getUniformLocation(_prog, 'u_vignette');
+  _uHighlightColor = gl.getUniformLocation(_prog, 'u_highlight_color');
+  _uShadowColor    = gl.getUniformLocation(_prog, 'u_shadow_color');
+  _uSplitBalance   = gl.getUniformLocation(_prog, 'u_split_balance');
+  _uSplitActive    = gl.getUniformLocation(_prog, 'u_split_active');
+  _uGrain          = gl.getUniformLocation(_prog, 'u_grain');
+
   // ── HSL program ──
   _hslProg = createProgram(gl, VERT, HSL_FRAG);
   gl.useProgram(_hslProg);
-  bindQuad(_hslProg);
+  bindQuadInner(_hslProg);
 
   _uHslTex      = gl.getUniformLocation(_hslProg, 'u_tex');
   _uHslData     = gl.getUniformLocation(_hslProg, 'u_hslData');
@@ -299,7 +451,7 @@ function initGL() {
   _uHslCount    = gl.getUniformLocation(_hslProg, 'u_hslCount');
   gl.uniform1i(_uHslTex, 0);
 
-  // ── FBO for ping-pong (allocated on first use) ──
+  // ── FBO for ping-pong ──
   _fbo    = gl.createFramebuffer();
   _fboTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, _fboTex);
@@ -418,26 +570,86 @@ const HSL_RANGES = {
   purples: [0.833,  0.083],
 };
 
+// ─── Utility helpers ───────────────────────────────────────────────────────
+function makeTexture(gl, src) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  return tex;
+}
+
+function _hue2rgb(p, q, t) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1/6) return p + (q - p) * 6 * t;
+  if (t < 1/2) return q;
+  if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+  return p;
+}
+function hslToRgb(h, s, l) {
+  h = h / 360;
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [_hue2rgb(p, q, h + 1/3), _hue2rgb(p, q, h), _hue2rgb(p, q, h - 1/3)];
+}
+
+function initSpatialProg() {
+  if (_spatialProg) return;
+  const gl = _gl;
+  _spatialProg = createProgram(gl, VERT, SPATIAL_FRAG);
+  gl.useProgram(_spatialProg);
+  gl.bindBuffer(gl.ARRAY_BUFFER, _quadBuf);
+  const loc = gl.getAttribLocation(_spatialProg, 'a_pos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  _uSpatialTexSrc = gl.getUniformLocation(_spatialProg, 'u_src');
+  _uTexelSize     = gl.getUniformLocation(_spatialProg, 'u_texelSize');
+  _uClarity       = gl.getUniformLocation(_spatialProg, 'u_clarity');
+  _uSharpen       = gl.getUniformLocation(_spatialProg, 'u_sharpen');
+  _uNrLuma        = gl.getUniformLocation(_spatialProg, 'u_nr_luma');
+  _uNrColor       = gl.getUniformLocation(_spatialProg, 'u_nr_color');
+  _uDehaze        = gl.getUniformLocation(_spatialProg, 'u_dehaze');
+  gl.uniform1i(_uSpatialTexSrc, 0);
+}
+
 // ─── Main export ───────────────────────────────────────────────────────────
 export function applyAdjustments(srcCanvas, adjustments) {
   const adjs = adjustments || [];
 
-  // Collect scalar values
+  // Collect all adjustment values (Track A + Track B)
   let brightness = 0, contrast = 0, saturation = 0;
   let vibrance = 0, temperature = 0, tint = 0, highlights = 0, shadows = 0;
-  const curveAdjs = {};  // channel -> points
-  const hslAdjs = {};    // range -> { hue, saturation, luminance }
+  let vignette = 0, grain = 0;
+  let clarity = 0, sharpen = 0, nrLuma = 0, nrColor = 0, dehaze = 0;
+  let splitTone = null;
+  const curveAdjs = {};
+  const hslAdjs = {};
 
   for (const adj of adjs) {
     switch (adj.type) {
-      case 'brightness':  brightness  = adj.value / 100; break;
-      case 'contrast':    contrast    = adj.value / 100; break;
-      case 'saturation':  saturation  = adj.value / 100; break;
-      case 'vibrance':    vibrance    = adj.value / 100; break;
-      case 'temperature': temperature = adj.value / 100; break;
-      case 'tint':        tint        = adj.value / 100; break;
-      case 'highlights':  highlights  = adj.value / 100; break;
-      case 'shadows':     shadows     = adj.value / 100; break;
+      case 'brightness':     brightness  = adj.value / 100; break;
+      case 'contrast':       contrast    = adj.value / 100; break;
+      case 'saturation':     saturation  = adj.value / 100; break;
+      case 'vibrance':       vibrance    = adj.value / 100; break;
+      case 'temperature':    temperature = adj.value / 100; break;
+      case 'tint':           tint        = adj.value / 100; break;
+      case 'highlights':     highlights  = adj.value / 100; break;
+      case 'shadows':        shadows     = adj.value / 100; break;
+      case 'vignette':       vignette    = adj.value / 100; break;
+      case 'grain':          grain       = (adj.value ?? 0) / 100; break;
+      case 'clarity':        clarity     = (adj.value ?? 0) / 100; break;
+      case 'sharpen':        sharpen     = (adj.value ?? 0) / 100; break;
+      case 'noise_reduction':
+        nrLuma  = (adj.value    ?? 0) / 100;
+        nrColor = (adj.colorNoise ?? 0) / 100;
+        break;
+      case 'dehaze':         dehaze      = (adj.value ?? 0) / 100; break;
+      case 'split_tone':     splitTone   = adj; break;
       case 'curves':
         if (adj.channel && adj.points) curveAdjs[adj.channel] = adj.points;
         break;
@@ -452,13 +664,16 @@ export function applyAdjustments(srcCanvas, adjustments) {
     }
   }
 
-  const hasCurves = Object.keys(curveAdjs).length > 0;
-  const hasHsl    = Object.keys(hslAdjs).length > 0;
-  const hasScalar = brightness !== 0 || contrast !== 0 || saturation !== 0
-                 || vibrance !== 0   || temperature !== 0 || tint !== 0
-                 || highlights !== 0 || shadows !== 0;
+  const hasCurves  = Object.keys(curveAdjs).length > 0;
+  const hasHsl     = Object.keys(hslAdjs).length > 0;
+  const hasSpatial = clarity !== 0 || sharpen !== 0 || nrLuma !== 0 || nrColor !== 0 || dehaze !== 0;
+  const hasPass1   = brightness !== 0 || contrast !== 0 || saturation !== 0
+                  || vibrance !== 0 || temperature !== 0 || tint !== 0
+                  || highlights !== 0 || shadows !== 0
+                  || vignette !== 0 || grain !== 0 || splitTone !== null
+                  || hasCurves;
 
-  if (!hasScalar && !hasCurves && !hasHsl) return null;
+  if (!hasPass1 && !hasHsl && !hasSpatial) return null;
 
   if (!initGL()) return null;
 
@@ -472,14 +687,9 @@ export function applyAdjustments(srcCanvas, adjustments) {
   }
 
   // ── Upload source texture (unit 0) ──
-  const srcTex = gl.createTexture();
+  const srcTex = makeTexture(gl, srcCanvas);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, srcTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, srcCanvas);
 
   // ── Build and upload curve LUT textures ──
   const lutTextures = [];
@@ -503,7 +713,7 @@ export function applyAdjustments(srcCanvas, adjustments) {
   setupLut('g',   3, _uHasLutG,   _uLutG);
   setupLut('b',   4, _uHasLutB,   _uLutB);
 
-  // ── Set scalar uniforms ──
+  // ── Set all scalar uniforms (Track A + Track B) ──
   gl.uniform1f(_uBright,      brightness);
   gl.uniform1f(_uContrast,    contrast);
   gl.uniform1f(_uSat,         saturation);
@@ -512,10 +722,26 @@ export function applyAdjustments(srcCanvas, adjustments) {
   gl.uniform1f(_uTint,        tint);
   gl.uniform1f(_uHighlights,  highlights);
   gl.uniform1f(_uShadows,     shadows);
+  gl.uniform1f(_uVignette,    vignette);
+  gl.uniform1f(_uGrain,       grain);
 
-  // ── Pass 1: main adjustments → either glCanvas or FBO ──
-  if (hasHsl) {
-    // Render to FBO so HSL pass can read the result
+  if (splitTone) {
+    const [hr, hg, hb] = hslToRgb(splitTone.highlightHue ?? 0, (splitTone.highlightSat ?? 0) / 100, 0.5);
+    const [sr, sg, sb] = hslToRgb(splitTone.shadowHue    ?? 0, (splitTone.shadowSat    ?? 0) / 100, 0.5);
+    gl.uniform3f(_uHighlightColor, hr, hg, hb);
+    gl.uniform3f(_uShadowColor, sr, sg, sb);
+    gl.uniform1f(_uSplitBalance, (splitTone.balance ?? 0) / 100);
+    gl.uniform1f(_uSplitActive, 1.0);
+  } else {
+    gl.uniform3f(_uHighlightColor, 0.5, 0.5, 0.5);
+    gl.uniform3f(_uShadowColor,    0.5, 0.5, 0.5);
+    gl.uniform1f(_uSplitBalance, 0.0);
+    gl.uniform1f(_uSplitActive, 0.0);
+  }
+
+  // ── Pass 1: main adjustments → FBO (if HSL or spatial needed) or screen ──
+  const needsFbo = hasHsl || hasSpatial;
+  if (needsFbo) {
     if (_fboW !== w || _fboH !== h) {
       _fboW = w; _fboH = h;
       gl.bindTexture(gl.TEXTURE_2D, _fboTex);
@@ -534,7 +760,7 @@ export function applyAdjustments(srcCanvas, adjustments) {
   gl.bindTexture(gl.TEXTURE_2D, srcTex);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-  // ── Pass 2: HSL (if needed) → glCanvas ──
+  // ── Pass 2: HSL (if needed) → FBO2 (if spatial also needed) or screen ──
   if (hasHsl) {
     const rangeOrder = ['reds','oranges','yellows','greens','cyans','blues','purples'];
     const activeRanges = rangeOrder.filter(r => hslAdjs[r]);
@@ -554,7 +780,24 @@ export function applyAdjustments(srcCanvas, adjustments) {
       hueDeltaArr[i]   = adj.hue        / 360;
     }
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (hasSpatial) {
+      // Need to write HSL result to _fbo2 so spatial can read it
+      if (!_fbo2) {
+        _fbo2 = gl.createFramebuffer();
+        _fboTex2 = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, _fboTex2);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, _fboTex2);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, _fbo2);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, _fboTex2, 0);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
     gl.viewport(0, 0, w, h);
     gl.useProgram(_hslProg);
 
@@ -566,11 +809,40 @@ export function applyAdjustments(srcCanvas, adjustments) {
     gl.uniform1i(_uHslCount,     count);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, _quadBuf);
-    const loc = gl.getAttribLocation(_hslProg, 'a_pos');
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const hslLoc = gl.getAttribLocation(_hslProg, 'a_pos');
+    gl.enableVertexAttribArray(hslLoc);
+    gl.vertexAttribPointer(hslLoc, 2, gl.FLOAT, false, 0, 0);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  // ── Pass 3: spatial effects (if needed) → screen ──
+  if (hasSpatial) {
+    initSpatialProg();
+    gl.useProgram(_spatialProg);
+
+    const spatialSrcTex = hasHsl ? _fboTex2 : _fboTex;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, spatialSrcTex);
+
+    const spatialBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, spatialBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const spatialLoc = gl.getAttribLocation(_spatialProg, 'a_pos');
+    gl.enableVertexAttribArray(spatialLoc);
+    gl.vertexAttribPointer(spatialLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.uniform2f(_uTexelSize, 1.0 / w, 1.0 / h);
+    gl.uniform1f(_uClarity,  clarity);
+    gl.uniform1f(_uSharpen,  sharpen);
+    gl.uniform1f(_uNrLuma,   nrLuma);
+    gl.uniform1f(_uNrColor,  nrColor);
+    gl.uniform1f(_uDehaze,   dehaze);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.deleteBuffer(spatialBuf);
   }
 
   for (const tex of lutTextures) gl.deleteTexture(tex);

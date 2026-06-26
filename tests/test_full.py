@@ -1401,6 +1401,140 @@ def run():
         check("tone-adj: no page errors throughout", len(errors_ta) == 0, str(errors_ta))
         ctx_ta.close()
 
+        # ---- Section 5: Track B local effects ----
+        ctx_fx = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_fx = ctx_fx.new_page()
+        errors_fx = []
+        page_fx.on("pageerror", lambda exc: errors_fx.append(str(exc)))
+        page_fx.goto(TEST_URL)
+        page_fx.wait_for_timeout(500)
+
+        with page_fx.expect_file_chooser() as fc_fx:
+            page_fx.click("#iconAddImage")
+        fc_fx.value.set_files(SAMPLE_IMG)
+        page_fx.wait_for_timeout(500)
+        st_fx = page_fx.evaluate("window.__test.getState()")
+        fx_img = next(l for l in st_fx["layers"] if l["type"] == "image")
+        fx_img_id = fx_img["id"]
+
+        page_fx.evaluate("(id) => window.__test.selectLayer(id)", fx_img_id)
+        page_fx.wait_for_timeout(200)
+
+        # Set export to 1x for speed
+        page_fx.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_fx.wait_for_timeout(50)
+
+        # Helper: export and return (path, PIL Image)
+        def fx_export(name):
+            import os as _os
+            with page_fx.expect_download() as dl:
+                page_fx.click("#btnExport")
+            path = _os.path.join(OUT_DIR, f"fx_{name}.png")
+            dl.value.save_as(path)
+            return path, Image.open(path)
+
+        # Baseline (no effects)
+        base_path, img_base_fx = fx_export("base")
+        base_w, base_h = img_base_fx.size
+        check("fx: baseline export valid", base_w > 0 and base_h > 0)
+
+        # Helper: set a slider and export, then verify
+        def apply_and_export(slider_id, value, effect_name, event_extra=""):
+            page_fx.evaluate(f"""() => {{
+                const sl = document.getElementById('{slider_id}');
+                if (!sl) return;
+                sl.value = '{value}';
+                sl.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                sl.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            }}""")
+            page_fx.wait_for_timeout(200)
+            path, img = fx_export(effect_name)
+            check(f"fx: {effect_name} renders without errors", len(errors_fx) == 0, str(errors_fx))
+            check(f"fx: {effect_name} export dimensions match original",
+                  img.size == (base_w, base_h), f"{img.size} vs {(base_w, base_h)}")
+            return path, img
+
+        # Reset all adjustments helper
+        def reset_slider(slider_id, value="0"):
+            page_fx.evaluate(f"""() => {{
+                const sl = document.getElementById('{slider_id}');
+                if (!sl) return;
+                sl.value = '{value}';
+                sl.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                sl.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            }}""")
+            page_fx.wait_for_timeout(100)
+
+        # Test vignette (negative = darken edges)
+        apply_and_export('aiVignette', '-80', 'vignette')
+        reset_slider('aiVignette')
+
+        # Test sharpen
+        apply_and_export('aiSharpen', '80', 'sharpen')
+        reset_slider('aiSharpen')
+
+        # Test clarity
+        apply_and_export('aiClarity', '80', 'clarity')
+        reset_slider('aiClarity')
+
+        # Test noise reduction
+        apply_and_export('aiNR', '80', 'noise_reduction')
+        reset_slider('aiNR')
+
+        # Test grain
+        apply_and_export('aiGrain', '80', 'grain')
+        reset_slider('aiGrain')
+
+        # Test split-tone (highlight and shadow hues)
+        page_fx.evaluate("""() => {
+            ['aiStHHue','aiStHSat','aiStSHue','aiStSSat'].forEach((id, i) => {
+                const sl = document.getElementById(id);
+                if (!sl) return;
+                sl.value = [30, 40, 220, 30][i];
+                sl.dispatchEvent(new Event('input', { bubbles: true }));
+                sl.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }""")
+        page_fx.wait_for_timeout(200)
+        st_path, img_st = fx_export("split_tone")
+        check("fx: split_tone renders without errors", len(errors_fx) == 0, str(errors_fx))
+        check("fx: split_tone export dimensions match original",
+              img_st.size == (base_w, base_h), f"{img_st.size} vs {(base_w, base_h)}")
+        # Reset split-tone
+        for sid in ['aiStHHue','aiStHSat','aiStSHue','aiStSSat','aiStBal']:
+            reset_slider(sid)
+
+        # Test dehaze (positive = reduce haze)
+        apply_and_export('aiDehaze', '60', 'dehaze')
+        reset_slider('aiDehaze')
+
+        # Undo after each effect type: test vignette undo specifically
+        page_fx.evaluate("""() => {
+            const sl = document.getElementById('aiVignette');
+            if (!sl) return;
+            sl.value = '-60';
+            sl.dispatchEvent(new Event('input', { bubbles: true }));
+            sl.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page_fx.wait_for_timeout(200)
+        st_before_undo = page_fx.evaluate("window.__test.getState()")
+        fx_layer_before = next(l for l in st_before_undo["layers"] if l["id"] == fx_img_id)
+        vig_before = next((a for a in fx_layer_before.get("adjustments", []) if a["type"] == "vignette"), None)
+        check("fx: vignette written to adjustments before undo",
+              vig_before is not None, str(fx_layer_before.get("adjustments")))
+
+        page_fx.click("#btnUndo")
+        page_fx.wait_for_timeout(200)
+        st_after_undo = page_fx.evaluate("window.__test.getState()")
+        fx_layer_after = next(l for l in st_after_undo["layers"] if l["id"] == fx_img_id)
+        vig_after = next((a for a in fx_layer_after.get("adjustments", []) if a["type"] == "vignette"), None)
+        check("fx: undo reverts vignette adjustment",
+              vig_after is None or vig_after["value"] == 0,
+              str(fx_layer_after.get("adjustments")))
+
+        check("fx: no page errors throughout", len(errors_fx) == 0, str(errors_fx))
+        ctx_fx.close()
+
         browser.close()
 
 
