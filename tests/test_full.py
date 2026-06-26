@@ -513,6 +513,193 @@ def run():
         check("adj: no page errors throughout", len(errors_adj) == 0, str(errors_adj))
         ctx_adj.close()
 
+        # ---- Section 5: Draw layer (Track D) ----
+        ctx_draw = browser.new_context(viewport={"width": 1400, "height": 900})
+        page_draw = ctx_draw.new_page()
+        errors_draw = []
+        page_draw.on("pageerror", lambda exc: errors_draw.append(str(exc)))
+        page_draw.goto(TEST_URL)
+        page_draw.wait_for_timeout(500)
+        check("draw: boots clean", len(errors_draw) == 0, str(errors_draw))
+
+        # 1. Creating a draw layer adds it to state.layers with type='draw' and strokes=[]
+        page_draw.click("#btnAddDraw")
+        page_draw.wait_for_timeout(200)
+        st_draw = page_draw.evaluate("window.__test.getState()")
+        draw_layers = [l for l in st_draw["layers"] if l["type"] == "draw"]
+        check("draw: add draw layer creates a 'draw' type layer", len(draw_layers) == 1)
+        draw_layer = draw_layers[0]
+        draw_id = draw_layer["id"]
+        check("draw: new draw layer has empty strokes array",
+              isinstance(draw_layer.get("strokes"), list) and len(draw_layer["strokes"]) == 0)
+        check("draw: new draw layer covers full canvas width",
+              draw_layer.get("w") == st_draw["width"])
+        check("draw: new draw layer covers full canvas height",
+              draw_layer.get("h") == st_draw["height"])
+        check("draw: new draw layer has blendMode", draw_layer.get("blendMode") is not None)
+        check("draw: new draw layer has adjustments array",
+              isinstance(draw_layer.get("adjustments"), list))
+
+        # 7. A draw layer with empty strokes renders as transparent (export should succeed)
+        page_draw.evaluate("document.getElementById('exportScale').dataset.value = '1'")
+        page_draw.wait_for_timeout(50)
+        with page_draw.expect_download() as dl_draw_empty:
+            page_draw.click("#btnExport")
+        empty_draw_path = os.path.join(OUT_DIR, "draw_empty_export.png")
+        dl_draw_empty.value.save_as(empty_draw_path)
+        img_empty = Image.open(empty_draw_path)
+        check("draw: empty draw layer export is valid PNG", img_empty.size[0] > 0)
+        check("draw: no page errors after empty draw layer export",
+              len(errors_draw) == 0, str(errors_draw))
+
+        # 2. Simulating a brush drag on a draw layer adds a stroke to layer.strokes
+        # Set tool to brush via props panel (should already be active after addDrawLayer)
+        # First ensure the draw layer is selected and brush is the active tool
+        page_draw.evaluate("(id) => window.__test.selectLayer(id)", draw_id)
+        page_draw.wait_for_timeout(150)
+
+        # Activate brush tool by clicking the brush button in props
+        page_draw.evaluate("""() => {
+            const btn = document.querySelector('.draw-tool-seg button[data-tool="brush"]');
+            if (btn) btn.click();
+        }""")
+        page_draw.wait_for_timeout(100)
+
+        # Drag across the stage canvas to draw a brush stroke
+        stage_rect = page_draw.evaluate("""() => {
+            const r = document.getElementById('stage').getBoundingClientRect();
+            return { left: r.left, top: r.top, width: r.width, height: r.height };
+        }""")
+        cx = stage_rect["left"] + stage_rect["width"] * 0.3
+        cy = stage_rect["top"] + stage_rect["height"] * 0.3
+        page_draw.mouse.move(cx, cy)
+        page_draw.mouse.down()
+        page_draw.mouse.move(cx + 80, cy + 40, steps=8)
+        page_draw.mouse.up()
+        page_draw.wait_for_timeout(200)
+
+        st_after_stroke = page_draw.evaluate("window.__test.getState()")
+        draw_after = next((l for l in st_after_stroke["layers"] if l["id"] == draw_id), None)
+        check("draw: brush drag adds a stroke to layer.strokes",
+              draw_after is not None and len(draw_after.get("strokes", [])) == 1,
+              f"strokes={draw_after.get('strokes', []) if draw_after else 'layer missing'}")
+        if draw_after and draw_after.get("strokes"):
+            s = draw_after["strokes"][0]
+            check("draw: stroke has tool='brush'", s.get("tool") == "brush")
+            check("draw: stroke has points array",
+                  isinstance(s.get("points"), list) and len(s.get("points", [])) > 0)
+
+        # 3. Draw layer renders without errors (valid export PNG)
+        with page_draw.expect_download() as dl_draw_stroke:
+            page_draw.click("#btnExport")
+        stroke_export_path = os.path.join(OUT_DIR, "draw_stroke_export.png")
+        dl_draw_stroke.value.save_as(stroke_export_path)
+        img_stroke = Image.open(stroke_export_path)
+        check("draw: draw layer with stroke renders to valid PNG", img_stroke.size[0] > 0)
+        check("draw: no page errors after stroke export",
+              len(errors_draw) == 0, str(errors_draw))
+
+        # 4. Undo removes the last stroke
+        page_draw.click("#btnUndo")
+        page_draw.wait_for_timeout(200)
+        st_after_undo = page_draw.evaluate("window.__test.getState()")
+        draw_after_undo = next((l for l in st_after_undo["layers"] if l["id"] == draw_id), None)
+        check("draw: undo removes the last stroke",
+              draw_after_undo is not None and len(draw_after_undo.get("strokes", [])) == 0,
+              f"strokes={draw_after_undo.get('strokes', []) if draw_after_undo else 'layer missing'}")
+
+        # Re-add the stroke for further tests
+        page_draw.mouse.move(cx, cy)
+        page_draw.mouse.down()
+        page_draw.mouse.move(cx + 80, cy + 40, steps=8)
+        page_draw.mouse.up()
+        page_draw.wait_for_timeout(200)
+
+        # 5. "Flatten to image" converts the draw layer to an image layer
+        page_draw.evaluate("(id) => window.__test.selectLayer(id)", draw_id)
+        page_draw.wait_for_timeout(150)
+        page_draw.evaluate("""() => {
+            const btn = document.getElementById('dFlatten');
+            if (btn) btn.click();
+        }""")
+        page_draw.wait_for_timeout(300)
+        st_after_flatten = page_draw.evaluate("window.__test.getState()")
+        # The draw layer should be gone, replaced by an image layer
+        draw_layers_after = [l for l in st_after_flatten["layers"] if l["type"] == "draw"]
+        image_layers_after = [l for l in st_after_flatten["layers"] if l["type"] == "image"]
+        check("draw: flatten removes the draw layer", len(draw_layers_after) == 0,
+              f"draw layers remaining: {len(draw_layers_after)}")
+        check("draw: flatten creates an image layer", len(image_layers_after) >= 1)
+
+        # 6. Eyedropper: add a white background, draw something, eyedrop it
+        # Add a rect layer with a known color, then eyedrop it
+        page_draw.evaluate("""() => {
+            // Create a new draw layer and set up eyedropper
+            window.__test.selectLayer(null);
+        }""")
+        page_draw.wait_for_timeout(100)
+
+        # Add a fresh draw layer
+        page_draw.click("#btnAddDraw")
+        page_draw.wait_for_timeout(200)
+        st_new = page_draw.evaluate("window.__test.getState()")
+        new_draw_layers = [l for l in st_new["layers"] if l["type"] == "draw"]
+        if new_draw_layers:
+            new_draw_id = new_draw_layers[-1]["id"]
+            page_draw.evaluate("(id) => window.__test.selectLayer(id)", new_draw_id)
+            page_draw.wait_for_timeout(150)
+
+            # Set color to a specific value, draw a stroke, then eyedrop it
+            page_draw.evaluate("""() => {
+                const input = document.getElementById('dBrushColor');
+                if (input) {
+                    input.value = '#00ff00';
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                const brushBtn = document.querySelector('.draw-tool-seg button[data-tool="brush"]');
+                if (brushBtn) brushBtn.click();
+            }""")
+            page_draw.wait_for_timeout(100)
+
+            # Draw a big stroke
+            cx2 = stage_rect["left"] + stage_rect["width"] * 0.5
+            cy2 = stage_rect["top"] + stage_rect["height"] * 0.5
+            page_draw.mouse.move(cx2 - 30, cy2)
+            page_draw.mouse.down()
+            page_draw.mouse.move(cx2 + 30, cy2, steps=5)
+            page_draw.mouse.up()
+            page_draw.wait_for_timeout(200)
+
+            # Activate eyedropper
+            page_draw.evaluate("""() => {
+                const eyeBtn = document.querySelector('.draw-tool-seg button[data-tool="eyedropper"]');
+                if (eyeBtn) eyeBtn.click();
+            }""")
+            page_draw.wait_for_timeout(100)
+
+            # Click on the stroke (center of canvas)
+            page_draw.mouse.click(cx2, cy2)
+            page_draw.wait_for_timeout(200)
+
+            # After eyedrop, tool should revert to brush and color should have changed
+            sampled_color = page_draw.evaluate("""() => {
+                // Access drawState from the app
+                return window._drawStateColor || null;
+            }""")
+            # We can't directly check drawState color from the test easily,
+            # but we can verify the tool reverted to brush (eyedropper auto-reverts)
+            active_tool_class = page_draw.evaluate("""() => {
+                const btns = document.querySelectorAll('.draw-tool-seg button[data-tool]');
+                for (const b of btns) if (b.classList.contains('active')) return b.dataset.tool;
+                return null;
+            }""")
+            check("draw: eyedropper auto-reverts to brush after sampling",
+                  active_tool_class == "brush",
+                  f"active tool: {active_tool_class}")
+
+        check("draw: no page errors throughout", len(errors_draw) == 0, str(errors_draw))
+        ctx_draw.close()
+
         browser.close()
 
 

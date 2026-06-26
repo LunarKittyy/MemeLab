@@ -1,5 +1,5 @@
-import { state, getSelected } from '../core/state.js';
-import { defaultTextLayer, defaultRectLayer, defaultImageLayer } from '../core/layers.js';
+import { state, getSelected, drawState } from '../core/state.js';
+import { defaultTextLayer, defaultRectLayer, defaultImageLayer, defaultDrawLayer } from '../core/layers.js';
 import { clamp } from '../core/utils.js';
 import { pushHistory, undo, redo, canUndo, canRedo, getHistoryEntries, jumpToHistory } from '../core/history.js';
 import { ensureImage } from '../core/state.js';
@@ -40,6 +40,17 @@ export function addRectLayerAction() {
   renderLayerList();
   selectLayer(l.id);
   pushHistory('Add shape layer');
+}
+
+export function addDrawLayerAction() {
+  const l = defaultDrawLayer();
+  state.layers.push(l);
+  setLastCreatedLayerId(l.id);
+  renderLayerList();
+  selectLayer(l.id);
+  drawState.activeTool = 'brush';
+  pushHistory('Add draw layer');
+  openPanelMobile('right', true);
 }
 
 function handleImageFile(file, target) {
@@ -173,6 +184,8 @@ export function initIcons() {
   setIcon('iconAddRect', 'shape');
   setIcon('btnOpenLeft', 'layers');
   setIcon('btnOpenRight', 'brush');
+  const drawIconEl = document.getElementById('iconAddDraw');
+  if (drawIconEl) setIcon('iconAddDraw', 'brush');
 }
 
 export function updateHistoryButtons(canUndo, canRedo) {
@@ -193,6 +206,8 @@ export function wireGlobalUI() {
   document.getElementById('btnAddText').addEventListener('click', addTextLayerAction);
   document.getElementById('btnAddRect').addEventListener('click', addRectLayerAction);
   document.getElementById('btnAddImage').addEventListener('click', () => { pendingImageTarget = null; fileInput.click(); });
+  const btnAddDraw = document.getElementById('btnAddDraw');
+  if (btnAddDraw) btnAddDraw.addEventListener('click', addDrawLayerAction);
   fileInput.addEventListener('change', () => {
     if (fileInput.files && fileInput.files[0]) handleImageFile(fileInput.files[0], pendingImageTarget);
     fileInput.value = '';

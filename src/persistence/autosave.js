@@ -46,13 +46,18 @@ function reconcileIdsAndCounters() {
     if (m) maxId = Math.max(maxId, +m[1]);
   });
   reseedIdSequenceFrom(maxId + 1);
-  const maxNum = { text: 0, image: 0, rect: 0 };
-  const re = /^(?:Text|Image|Shape) (\d+)$/;
+  const maxNum = { text: 0, image: 0, rect: 0, draw: 0 };
+  const re = /^(?:Text|Image|Shape|Drawing) (\d+)$/;
   state.layers.forEach((l) => {
     const m = re.exec(l.name || '');
-    if (m && maxNum[l.type] !== undefined) maxNum[l.type] = Math.max(maxNum[l.type], +m[1]);
+    if (m) {
+      if (l.type === 'text') maxNum.text = Math.max(maxNum.text, +m[1]);
+      else if (l.type === 'image') maxNum.image = Math.max(maxNum.image, +m[1]);
+      else if (l.type === 'rect') maxNum.rect = Math.max(maxNum.rect, +m[1]);
+      else if (l.type === 'draw') maxNum.draw = Math.max(maxNum.draw, +m[1]);
+    }
   });
-  counters.text = maxNum.text; counters.image = maxNum.image; counters.rect = maxNum.rect;
+  counters.text = maxNum.text; counters.image = maxNum.image; counters.rect = maxNum.rect; counters.draw = maxNum.draw;
 }
 
 function applyLoadedSnapshot(snap) {
@@ -74,6 +79,12 @@ function applyLoadedSnapshot(snap) {
       }
     }
     if (l.type === 'image') delete l.exposure;
+    // Draw layer migration
+    if (l.type === 'draw') {
+      if (!Array.isArray(l.strokes)) l.strokes = [];
+      if (l.blendMode === undefined) l.blendMode = 'normal';
+      if (l.adjustments === undefined) l.adjustments = [];
+    }
   });
   state.selectedId = null;
   reconcileIdsAndCounters();

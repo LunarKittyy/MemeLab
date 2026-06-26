@@ -2,10 +2,11 @@ import { state, getSelected, ensureImage, getLayerById } from '../core/state.js'
 import { clamp, deg2rad } from '../core/utils.js';
 import { drawTextLayer } from './text.js';
 import { drawImageLayer, drawRectLayer, drawCover } from './shapes.js';
+import { drawDrawLayer, invalidateAllDrawCaches } from './drawLayer.js';
 import { viewport, resetViewport } from '../core/viewport.js';
 
 export let stage = null;
-let stageCtx = null;
+export let stageCtx = null;
 let dpr = 1;
 let _fitScale = 1;
 
@@ -47,6 +48,7 @@ function drawLayer(ctx, layer, backdrop) {
   if (layer.type === 'image') drawImageLayer(ctx, layer);
   else if (layer.type === 'rect') drawRectLayer(ctx, layer, backdrop);
   else if (layer.type === 'text') drawTextLayer(ctx, layer);
+  else if (layer.type === 'draw') drawDrawLayer(ctx, layer);
   ctx.restore();
 }
 
@@ -206,6 +208,8 @@ function renderThumbToDataURL(id) {
         drawRectLayer(ctx, layer);
       } else if (layer.type === 'text') {
         drawTextLayer(ctx, layer);
+      } else if (layer.type === 'draw') {
+        drawDrawLayer(ctx, layer);
       }
       ctx.restore();
     }

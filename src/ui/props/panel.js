@@ -4,6 +4,7 @@ import { textPropsHtml, wireTextProps } from './textProps.js';
 import { imagePropsHtml, wireImageProps } from './imageProps.js';
 import { rectPropsHtml, wireRectProps } from './rectProps.js';
 import { backgroundPropsHtml, wireBackgroundProps } from './backgroundProps.js';
+import { drawPropsHtml, wireDrawProps } from './drawProps.js';
 
 export function renderPropsPanel() {
   const body = document.getElementById('propsBody');
@@ -19,9 +20,11 @@ export function renderPropsPanel() {
   }
   if (layer.type === 'text') body.innerHTML = textPropsHtml(layer);
   else if (layer.type === 'image') body.innerHTML = imagePropsHtml(layer);
+  else if (layer.type === 'draw') body.innerHTML = drawPropsHtml(layer);
   else body.innerHTML = rectPropsHtml(layer);
-  wireCommonTransformProps(layer);
+  if (layer.type !== 'draw') wireCommonTransformProps(layer);
   if (layer.type === 'text') wireTextProps(layer);
   else if (layer.type === 'image') wireImageProps(layer);
+  else if (layer.type === 'draw') wireDrawProps(layer);
   else wireRectProps(layer);
 }

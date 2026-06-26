@@ -1,5 +1,6 @@
 import { state, ensureImage } from './state.js';
 import { clearAdjustCache } from '../render/adjustCache.js';
+import { invalidateAllDrawCaches } from '../render/drawLayer.js';
 
 let history = [];
 let historyIndex = -1;
@@ -52,6 +53,7 @@ export function restoreSnapshot(snap) {
   state.layers = clone.layers;
   state.selectedId = clone.selectedId;
   clearAdjustCache();
+  invalidateAllDrawCaches();
   if (state.background.src) ensureImage(state.background.src);
   state.layers.forEach((l) => {
     if (l.type === 'image') {
